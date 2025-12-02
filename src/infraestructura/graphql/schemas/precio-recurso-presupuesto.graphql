@@ -1,0 +1,64 @@
+# ============================================================================
+# ESQUEMA DE PRECIO_RECURSO_PRESUPUESTO
+# Catálogo compartido de precios de recursos por presupuesto
+# ============================================================================
+
+type PrecioRecursoPresupuesto {
+  _id: ID!
+  id_precio_recurso: String!
+  id_presupuesto: String!
+  recurso_id: String!
+  
+  # Snapshot del recurso
+  codigo_recurso: String!
+  descripcion: String!
+  unidad: String!
+  tipo_recurso: TipoRecursoPresupuesto!
+  
+  # Precio
+  precio: Float!
+  
+  # Control y trazabilidad
+  fecha_actualizacion: String!
+  usuario_actualizo: String!
+}
+
+enum TipoRecursoPresupuesto {
+  MATERIAL
+  MANO_OBRA
+  EQUIPO
+  SUBCONTRATO
+}
+
+extend type Query {
+  listPreciosRecursoPresupuesto: [PrecioRecursoPresupuesto!]!
+  getPrecioRecursoPresupuesto(id_precio_recurso: String!): PrecioRecursoPresupuesto
+  getPreciosRecursoByPresupuesto(id_presupuesto: String!): [PrecioRecursoPresupuesto!]!
+  getPrecioRecursoByPresupuestoYRecurso(
+    id_presupuesto: String!
+    recurso_id: String!
+  ): PrecioRecursoPresupuesto
+}
+
+extend type Mutation {
+  createPrecioRecursoPresupuesto(
+    id_presupuesto: String!
+    recurso_id: String!
+    codigo_recurso: String!
+    descripcion: String!
+    unidad: String!
+    tipo_recurso: TipoRecursoPresupuesto!
+    precio: Float!
+    usuario_actualizo: String!
+  ): PrecioRecursoPresupuesto!
+
+  updatePrecioRecursoPresupuesto(
+    id_precio_recurso: String!
+    precio: Float
+    usuario_actualizo: String
+  ): PrecioRecursoPresupuesto
+
+  deletePrecioRecursoPresupuesto(id_precio_recurso: String!): PrecioRecursoPresupuesto
+}
+
+

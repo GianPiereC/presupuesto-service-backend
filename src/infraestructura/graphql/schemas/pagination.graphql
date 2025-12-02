@@ -1,0 +1,80 @@
+# ============================================================================
+# ESQUEMAS DE PAGINACIÓN Y FILTROS - Sistema de Paginación Universal
+# ============================================================================
+
+# ============================================================================
+# TIPOS DE PAGINACIÓN
+# ============================================================================
+
+type PaginationInfo {
+  page: Int!
+  limit: Int!
+  total: Int!
+  totalPages: Int!
+  hasNext: Boolean!
+  hasPrev: Boolean!
+}
+
+type PaginatedResponse {
+  data: [JSON]!
+  pagination: PaginationInfo!
+}
+
+# ============================================================================
+# INPUT TYPES PARA PAGINACIÓN
+# ============================================================================
+
+input PaginationInput {
+  page: Int
+  limit: Int
+  sortBy: String
+  sortOrder: SortOrder
+}
+
+input FilterInput {
+  field: String!
+  value: JSON!
+  operator: FilterOperator
+}
+
+input SearchInput {
+  query: String
+  fields: [String!]
+}
+
+input PaginationFilterInput {
+  pagination: PaginationInput
+  filters: [FilterInput!]
+  search: SearchInput
+}
+
+# ============================================================================
+# ENUMS
+# ============================================================================
+
+enum SortOrder {
+  asc
+  desc
+}
+
+enum FilterOperator {
+  eq
+  ne
+  gt
+  gte
+  lt
+  lte
+  in
+  nin
+  contains
+  startsWith
+  endsWith
+  regex
+}
+
+# ============================================================================
+# SCALAR JSON
+# ============================================================================
+
+scalar JSON
+

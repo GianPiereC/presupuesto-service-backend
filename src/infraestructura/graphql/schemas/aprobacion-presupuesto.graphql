@@ -1,0 +1,105 @@
+# ============================================================================
+# ESQUEMA DE APROBACIÓN DE PRESUPUESTOS
+# ============================================================================
+
+# ============================================================================
+# TIPOS DE APROBACIÓN
+# ============================================================================
+
+type AprobacionPresupuesto {
+  id_aprobacion: String!
+  id_presupuesto: String!
+  id_grupo_version: String
+  id_proyecto: String!
+  tipo_aprobacion: TipoAprobacion!
+  usuario_solicitante_id: String!
+  usuario_aprobador_id: String
+  estado: EstadoAprobacion!
+  fecha_solicitud: String!
+  fecha_aprobacion: String
+  fecha_rechazo: String
+  fecha_vencimiento: String
+  comentario_solicitud: String
+  comentario_aprobacion: String
+  comentario_rechazo: String
+  nivel_jerarquia: Int
+  requiere_multiple_aprobacion: Boolean
+  orden_aprobacion: Int
+  version_presupuesto: Int
+  monto_presupuesto: Float
+  es_urgente: Boolean
+}
+
+enum TipoAprobacion {
+  LICITACION_A_CONTRACTUAL
+  CONTRACTUAL_A_META
+}
+
+enum EstadoAprobacion {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
+  CANCELADO
+}
+
+# ============================================================================
+# TIPOS PARA AGRUPACIÓN
+# ============================================================================
+
+type ProyectoConAprobaciones {
+  proyecto: Proyecto
+  gruposPresupuestos: [GrupoPresupuestoAprobacion!]!
+}
+
+type GrupoPresupuestoAprobacion {
+  id_aprobacion: String!
+  id_grupo_version: String!
+  presupuestoPadre: Presupuesto
+  versiones: [Presupuesto!]!
+  tipoAprobacion: TipoAprobacion!
+}
+
+# ============================================================================
+# QUERIES
+# ============================================================================
+
+extend type Query {
+  # Obtener todas las aprobaciones pendientes
+  getAprobacionesPendientes: [AprobacionPresupuesto!]!
+  
+  # Obtener aprobaciones pendientes agrupadas por proyecto y presupuesto
+  getAprobacionesPendientesAgrupadas: [ProyectoConAprobaciones!]!
+  
+  # Obtener aprobaciones pendientes por aprobador
+  getAprobacionesPorAprobador(usuario_aprobador_id: String!): [AprobacionPresupuesto!]!
+  
+  # Obtener aprobaciones por presupuesto
+  getAprobacionesPorPresupuesto(id_presupuesto: String!): [AprobacionPresupuesto!]!
+  
+  # Obtener aprobaciones por proyecto
+  getAprobacionesPorProyecto(id_proyecto: String!): [AprobacionPresupuesto!]!
+  
+  # Obtener una aprobación por ID
+  getAprobacion(id_aprobacion: String!): AprobacionPresupuesto
+}
+
+# ============================================================================
+# MUTATIONS
+# ============================================================================
+
+extend type Mutation {
+  # Aprobar un presupuesto
+  aprobarPresupuesto(
+    id_aprobacion: String!
+    usuario_aprobador_id: String!
+    comentario: String
+  ): AprobacionPresupuesto!
+  
+  # Rechazar un presupuesto
+  rechazarPresupuesto(
+    id_aprobacion: String!
+    usuario_aprobador_id: String!
+    comentario: String!
+  ): AprobacionPresupuesto!
+}
+

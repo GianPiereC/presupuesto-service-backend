@@ -1,0 +1,22 @@
+# ============================================================================
+# SCHEMA BASE - TIPOS ESCALARES Y DEFINICIONES COMUNES
+# ============================================================================
+
+# Tipos escalares personalizados
+scalar DateTime
+scalar JSON
+scalar Upload
+
+# Tipos comunes que pueden ser reutilizados
+type Query {
+  _empty: String
+}
+
+type Mutation {
+  _empty: String
+}
+
+type Subscription {
+  _empty: String
+}
+

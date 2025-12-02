@@ -1,0 +1,55 @@
+type Titulo {
+  _id: ID!
+  id_titulo: String!
+  id_presupuesto: String!
+  id_proyecto: String!
+  id_titulo_padre: String
+  nivel: Int!
+  numero_item: String!
+  descripcion: String!
+  tipo: TipoTitulo!
+  orden: Int!
+  total_parcial: Float!
+}
+
+enum TipoTitulo {
+  TITULO
+  SUBTITULO
+}
+
+extend type Query {
+  listTitulos: [Titulo!]!
+  getTitulo(id_titulo: String!): Titulo
+  getTitulosByPresupuesto(id_presupuesto: String!): [Titulo!]!
+  getTitulosByProyecto(id_proyecto: String!): [Titulo!]!
+  getTitulosHijos(id_titulo_padre: String!): [Titulo!]!
+  getTitulosPorPadre(id_titulo_padre: String): [Titulo!]!
+}
+
+extend type Mutation {
+  createTitulo(
+    id_presupuesto: String!
+    id_proyecto: String!
+    id_titulo_padre: String
+    nivel: Int!
+    numero_item: String!
+    descripcion: String!
+    tipo: TipoTitulo!
+    orden: Int!
+    total_parcial: Float
+  ): Titulo!
+
+  updateTitulo(
+    id_titulo: String!
+    id_titulo_padre: String
+    nivel: Int
+    numero_item: String
+    descripcion: String
+    tipo: TipoTitulo
+    orden: Int
+    total_parcial: Float
+  ): Titulo
+
+  deleteTitulo(id_titulo: String!): Titulo
+}
+

@@ -1,0 +1,21 @@
+# ============================================================================
+# ESQUEMA DE DEPARTAMENTO - Catálogo de Departamentos
+# ============================================================================
+
+type Departamento {
+  _id: ID
+  id_departamento: String
+  nombre_departamento: String
+  ubigeo: String
+  esNuevoFormato: Boolean
+}
+
+# ============================================================================
+# QUERIES
+# ============================================================================
+
+extend type Query {
+  listDepartamentos(esNuevoFormato: Boolean): [Departamento!]!
+  getDepartamento(id_departamento: String!): Departamento
+}
+

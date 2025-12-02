@@ -1,0 +1,7 @@
+# Configuración de Bun para el proyecto
+# Bun soporta path aliases directamente desde tsconfig.json
+
+[install]
+# Usar bun para instalar dependencias
+auto = true
+

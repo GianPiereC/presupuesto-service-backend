@@ -1,0 +1,83 @@
+type DetallePartidaData {
+  metrado: Float!
+  precio: Float!
+  unidad_id: String!
+  jornada: Float!
+  total: Float
+}
+
+type RecursoApuData {
+  id_rec_comp_apu: String!
+  recurso_id: String!
+  unidad_id: String!
+  nombre: String!
+  especificaciones: String
+  descripcion: String
+}
+
+type PrecioRecursoData {
+  id_prp: String!
+  precio: Float!
+  fecha_creacion: String!
+}
+
+type ComposicionApuData {
+  id_composicion_apu: String!
+  cuadrilla: Float!
+  cantidad: Float!
+  recurso: RecursoApuData!
+  precio_recurso: PrecioRecursoData
+}
+
+type TituloData {
+  id_titulo: String!
+  item: String!
+  descripcion: String!
+  parcial: Float!
+  tipo_titulo: String!
+  nivel: Int!
+  detalle: DetallePartidaData
+  apu: [ComposicionApuData]
+}
+
+type PresupuestoData {
+  id_presupuesto: String!
+  nombre_presupuesto: String!
+  costo_directo: Float!
+  total_presupuesto: Float!
+  fecha_creacion: String!
+  titulos: [TituloData!]
+}
+
+type ProyectoData {
+  id_proyecto: String!
+  nombre_proyecto: String!
+  cliente: String!
+  empresa: String!
+  estado: String!
+  fecha_creacion: String!
+  plazo: Int!
+  ppto_base: Float!
+  ppto_oferta: Float!
+  total_proyecto: Float
+}
+
+type ProyectoCompleto {
+  proyecto: ProyectoData
+  presupuestos: [PresupuestoData!]
+}
+
+type ClonacionProyectoResponse {
+  success: Boolean!
+  message: String!
+  id_proyecto: String!
+}
+
+extend type Query {
+  getProyectoCompleto(id_proyecto: String!): ProyectoCompleto
+}
+
+extend type Mutation {
+  clonarProyectoCompleto(id_proyecto: String!): ClonacionProyectoResponse
+}
+

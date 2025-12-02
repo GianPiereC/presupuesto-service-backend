@@ -1,0 +1,79 @@
+type Proyecto {
+  _id: ID!
+  id_proyecto: String!
+  id_usuario: String!
+  id_infraestructura: String!
+  nombre_proyecto: String!
+  id_departamento: String!
+  id_provincia: String!
+  id_distrito: String!
+  id_localidad: String
+  total_proyecto: Float
+  estado: String!
+  fecha_creacion: String!
+  fecha_ultimo_calculo: String
+  cliente: String!
+  empresa: String!
+  plazo: Int!
+  ppto_base: Float!
+  ppto_oferta: Float!
+  jornada: Float!
+  presupuestos: [Presupuesto]
+}
+
+# Tipo de respuesta paginada específica para Proyecto
+type PaginatedProyectoResponse {
+  data: [Proyecto!]!
+  pagination: PaginationInfo!
+}
+
+extend type Query {
+  listProyectos: [Proyecto!]!
+  listProyectosConPresupuestos: [Proyecto!]!
+  getProyecto(id_proyecto: String!): Proyecto
+  getProyectosByUsuario(id_usuario: String!): [Proyecto!]!
+  calcularTotalProyecto(id_proyecto: String!): Proyecto
+  # Query paginado con filtros y búsqueda
+  listProyectosPaginated(input: PaginationFilterInput): PaginatedProyectoResponse!
+}
+
+extend type Mutation {
+  addProyecto(
+    id_usuario: String!
+    id_infraestructura: String!
+    nombre_proyecto: String!
+    id_departamento: String!
+    id_provincia: String!
+    id_distrito: String!
+    id_localidad: String
+    total_proyecto: Float
+    estado: String!
+    cliente: String!
+    empresa: String!
+    plazo: Int!
+    ppto_base: Float!
+    ppto_oferta: Float!
+    jornada: Float!
+  ): Proyecto!
+
+  updateProyecto(
+    id_proyecto: String!
+    nombre_proyecto: String
+    estado: String
+    total_proyecto: Float
+    cliente: String
+    empresa: String
+    plazo: Int
+    ppto_base: Float
+    ppto_oferta: Float
+    jornada: Float
+    id_departamento: String
+    id_distrito: String
+    id_infraestructura: String
+    id_localidad: String
+    id_provincia: String
+  ): Proyecto
+
+  deleteProyecto(id_proyecto: String!): Proyecto
+}
+

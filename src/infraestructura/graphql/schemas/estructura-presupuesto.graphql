@@ -1,0 +1,12 @@
+# Estructura completa del presupuesto con títulos y partidas (arrays planos)
+type EstructuraPresupuesto {
+  presupuesto: Presupuesto!
+  titulos: [Titulo!]!
+  partidas: [Partida!]!
+}
+
+extend type Query {
+  # Obtener estructura completa del presupuesto (títulos y partidas como arrays planos)
+  getEstructuraPresupuesto(id_presupuesto: String!): EstructuraPresupuesto
+}
+

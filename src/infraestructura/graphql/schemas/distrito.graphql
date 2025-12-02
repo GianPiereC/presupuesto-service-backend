@@ -1,0 +1,24 @@
+# ============================================================================
+# ESQUEMA DE DISTRITO - Catálogo de Distritos
+# ============================================================================
+
+type Distrito {
+  _id: ID
+  id_distrito: String
+  id_provincia: String
+  nombre_distrito: String
+  id_departamento: String
+  ubigeo: String
+  esNuevoFormato: Boolean
+}
+
+# ============================================================================
+# QUERIES
+# ============================================================================
+
+extend type Query {
+  listDistritos: [Distrito!]!
+  getDistrito(id_distrito: String!): Distrito
+  getDistritosByProvincia(id_provincia: String!): [Distrito!]!
+}
+

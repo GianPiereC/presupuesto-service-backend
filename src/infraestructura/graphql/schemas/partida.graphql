@@ -1,0 +1,71 @@
+type Partida {
+  _id: ID!
+  id_partida: String!
+  id_presupuesto: String!
+  id_proyecto: String!
+  id_titulo: String!
+  id_partida_padre: String
+  nivel_partida: Int!
+  numero_item: String!
+  codigo_partida: String!
+  descripcion: String!
+  unidad_medida: String!
+  metrado: Float!
+  precio_unitario: Float!
+  parcial_partida: Float!
+  orden: Int!
+  estado: EstadoPartida!
+}
+
+enum EstadoPartida {
+  Activa
+  Inactiva
+}
+
+extend type Query {
+  listPartidas: [Partida!]!
+  getPartida(id_partida: String!): Partida
+  getPartidasByPresupuesto(id_presupuesto: String!): [Partida!]!
+  getPartidasByProyecto(id_proyecto: String!): [Partida!]!
+  getPartidasByTitulo(id_titulo: String!): [Partida!]!
+  getPartidasPrincipalesByTitulo(id_titulo: String!): [Partida!]!
+  getSubpartidas(id_partida_padre: String!): [Partida!]!
+}
+
+extend type Mutation {
+  createPartida(
+    id_presupuesto: String!
+    id_proyecto: String!
+    id_titulo: String!
+    id_partida_padre: String
+    nivel_partida: Int!
+    numero_item: String!
+    codigo_partida: String!
+    descripcion: String!
+    unidad_medida: String!
+    metrado: Float!
+    precio_unitario: Float!
+    parcial_partida: Float
+    orden: Int!
+    estado: EstadoPartida
+  ): Partida!
+
+  updatePartida(
+    id_partida: String!
+    id_titulo: String
+    id_partida_padre: String
+    nivel_partida: Int
+    numero_item: String
+    codigo_partida: String
+    descripcion: String
+    unidad_medida: String
+    metrado: Float
+    precio_unitario: Float
+    parcial_partida: Float
+    orden: Int
+    estado: EstadoPartida
+  ): Partida
+
+  deletePartida(id_partida: String!): Partida
+}
+

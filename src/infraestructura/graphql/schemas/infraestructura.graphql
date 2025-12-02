@@ -1,0 +1,18 @@
+# ============================================================================
+# ESQUEMA DE INFRAESTRUCTURA - Consumido del monolito inacons-backend
+# ============================================================================
+
+type Infraestructura {
+  _id: ID
+  id: ID!
+  id_infraestructura: String!
+  nombre_infraestructura: String!
+  tipo_infraestructura: String!
+  descripcion: String
+}
+
+extend type Query {
+  listInfraestructuras: [Infraestructura!]!
+  getInfraestructuraById(id: ID!): Infraestructura
+}
+

@@ -1,0 +1,201 @@
+type Presupuesto {
+  _id: ID!
+  id_presupuesto: String!
+  id_proyecto: String!
+  costo_directo: Float!
+  fecha_creacion: String!
+  monto_igv: Float!
+  monto_utilidad: Float!
+  nombre_presupuesto: String!
+  numeracion_presupuesto: Int
+  parcial_presupuesto: Float!
+  observaciones: String!
+  porcentaje_igv: Float!
+  porcentaje_utilidad: Float!
+  plazo: Int!
+  ppto_base: Float!
+  ppto_oferta: Float!
+  total_presupuesto: Float!
+  
+  # Nuevos campos para versionado (opcionales/nullable para compatibilidad con datos antiguos)
+  id_grupo_version: String
+  fase: FasePresupuesto
+  version: Int              # null = padre, número = versión
+  descripcion_version: String  # Opcional: motivo de creación de la versión
+  es_padre: Boolean         # Derivado: version === null (nullable para compatibilidad)
+  id_presupuesto_base: String
+  id_presupuesto_licitacion: String
+  version_licitacion_aprobada: Int
+  id_presupuesto_contractual: String
+  version_contractual_aprobada: Int
+  es_inmutable: Boolean     # Nullable para compatibilidad con datos antiguos
+  es_activo: Boolean        # Nullable para compatibilidad con datos antiguos
+  estado: EstadoPresupuesto  # Nullable para compatibilidad con datos antiguos
+  aprobacion_licitacion: AprobacionLicitacion
+  aprobacion_meta: AprobacionMeta
+}
+
+enum FasePresupuesto {
+  BORRADOR
+  LICITACION
+  CONTRACTUAL
+  META
+}
+
+enum EstadoPresupuesto {
+  borrador
+  en_revision
+  aprobado
+  rechazado
+  vigente
+}
+
+type AprobacionLicitacion {
+  aprobado: Boolean!
+  usuario_aprobador_id: String
+  fecha_aprobacion: String
+  comentario: String
+  jerarquia_aprobacion: Int
+}
+
+type AprobacionMeta {
+  aprobado: Boolean!
+  usuario_aprobador_id: String
+  fecha_aprobacion: String
+  comentario: String
+  es_version_final: Boolean!
+}
+
+extend type Query {
+  listPresupuestos: [Presupuesto!]!
+  getPresupuesto(id_presupuesto: String!): Presupuesto
+  getPresupuestosByProyecto(id_proyecto: String!): [Presupuesto!]!
+  
+  # Queries para consultas desde otros microservicios
+  getPresupuestosMetaCompletados(
+    id_proyecto: String
+    estado: EstadoPresupuesto
+  ): [Presupuesto!]!
+  
+  getPresupuestosPorFaseYEstado(
+    fase: FasePresupuesto!
+    estado: EstadoPresupuesto
+    id_proyecto: String
+  ): [Presupuesto!]!
+}
+
+extend type Mutation {
+  addPresupuesto(
+    id_proyecto: String!
+    costo_directo: Float!
+    monto_igv: Float!
+    monto_utilidad: Float!
+    nombre_presupuesto: String!
+    numeracion_presupuesto: Int
+    parcial_presupuesto: Float!
+    observaciones: String!
+    porcentaje_igv: Float!
+    porcentaje_utilidad: Float!
+    plazo: Int!
+    ppto_base: Float!
+    ppto_oferta: Float!
+    total_presupuesto: Float!
+  ): Presupuesto!
+
+  updatePresupuesto(
+    id_presupuesto: String!
+    nombre_presupuesto: String
+    numeracion_presupuesto: Int
+    costo_directo: Float
+    monto_igv: Float
+    monto_utilidad: Float
+    observaciones: String
+    porcentaje_igv: Float
+    porcentaje_utilidad: Float
+    plazo: Int
+    ppto_base: Float
+    ppto_oferta: Float
+    total_presupuesto: Float
+  ): Presupuesto
+
+  deletePresupuesto(id_presupuesto: String!): Presupuesto
+
+  # Crear presupuesto padre (sin detalles)
+  crearPresupuestoPadre(
+    id_proyecto: String!
+    nombre_presupuesto: String!
+    porcentaje_igv: Float      # Opcional: default 18
+    porcentaje_utilidad: Float # Opcional: default 0
+    fase: FasePresupuesto      # Opcional: default BORRADOR
+  ): Presupuesto!
+  
+  # Crear versión 1 desde un presupuesto padre
+  crearVersionDesdePadre(
+    id_presupuesto_padre: String!
+    descripcion_version: String  # Opcional: motivo de creación
+  ): Presupuesto!
+  
+  # Crear nueva versión clonando un presupuesto completo (con estructura)
+  crearVersionDesdeVersion(
+    id_presupuesto_base: String!
+    descripcion_version: String  # Opcional: motivo de creación
+  ): Presupuesto!
+  
+  # Enviar versión 1 a licitación (cambiar fase a LICITACION)
+  enviarALicitacion(
+    id_presupuesto: String!
+  ): Presupuesto!
+  
+  # Pasar una versión de LICITACION a fase CONTRACTUAL (crea una aprobación)
+  pasarAContractual(
+    id_presupuesto_licitacion: String!
+    usuario_solicitante_id: String!
+    motivo: String
+  ): AprobacionPresupuesto!
+  
+  # Crear presupuesto con versionado
+  crearPresupuestoConVersion(
+    id_proyecto: String!
+    nombre_presupuesto: String!
+    costo_directo: Float!
+    monto_igv: Float!
+    monto_utilidad: Float!
+    parcial_presupuesto: Float!
+    observaciones: String!
+    porcentaje_igv: Float!
+    porcentaje_utilidad: Float!
+    plazo: Int!
+    ppto_base: Float!
+    ppto_oferta: Float!
+    total_presupuesto: Float!
+    id_grupo_version: String  # Opcional: si no se proporciona, crea nuevo grupo
+    fase: FasePresupuesto      # Opcional: default BORRADOR
+    descripcion_version: String  # Opcional: motivo de creación
+  ): Presupuesto!
+  
+  # Crear presupuesto META desde una versión contractual
+  crearPresupuestoMetaDesdeContractual(
+    id_presupuesto_contractual: String!
+    motivo: String
+  ): Presupuesto!
+  
+  # Actualizar presupuesto padre y propagar cambios a todos los hijos
+  actualizarPresupuestoPadre(
+    id_presupuesto: String!
+    nombre_presupuesto: String
+    porcentaje_igv: Float
+    porcentaje_utilidad: Float
+  ): Presupuesto!
+
+  # Eliminar todo el grupo de versiones de presupuesto (solo en estado BORRADOR)
+  eliminarGrupoPresupuestoCompleto(
+    id_grupo_version: String!
+  ): EliminacionGrupoResponse!
+}
+
+type EliminacionGrupoResponse {
+  success: Boolean!
+  message: String!
+  grupo_version_eliminado: String!
+}
+

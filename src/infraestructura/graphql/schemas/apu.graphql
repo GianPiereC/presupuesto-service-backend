@@ -1,0 +1,130 @@
+# ============================================================================
+# ESQUEMA DE APU (Análisis de Precio Unitario)
+# ============================================================================
+
+type RecursoApu {
+  id_recurso_apu: String!
+  recurso_id: String!
+  
+  # Snapshot del recurso
+  codigo_recurso: String!
+  descripcion: String!
+  unidad_medida: String!
+  tipo_recurso: TipoRecursoApu!
+  
+  # Sistema de precios simplificado: SOLO referencia
+  id_precio_recurso: String  # REFERENCIA al precio compartido en precio_recurso_presupuesto
+  precio: Float!  # Precio calculado dinámicamente desde precio_recurso_presupuesto (NO se guarda)
+  
+  # Cantidades
+  cuadrilla: Float
+  cantidad: Float!
+  desperdicio_porcentaje: Float!
+  cantidad_con_desperdicio: Float!
+  
+  # Cálculo
+  parcial: Float!  # Calculado: cantidad_con_desperdicio * precio
+  orden: Int!
+}
+
+enum TipoRecursoApu {
+  MATERIAL
+  MANO_OBRA
+  EQUIPO
+  SUBCONTRATO
+}
+
+type Apu {
+  _id: ID!
+  id_apu: String!
+  id_partida: String!
+  id_presupuesto: String!
+  id_proyecto: String!
+  
+  rendimiento: Float!
+  jornada: Float!
+  
+  costo_materiales: Float!
+  costo_mano_obra: Float!
+  costo_equipos: Float!
+  costo_subcontratos: Float!
+  costo_directo: Float!
+  
+  recursos: [RecursoApu!]!
+}
+
+extend type Query {
+  listApus: [Apu!]!
+  getApu(id_apu: String!): Apu
+  getApuByPartida(id_partida: String!): Apu
+  getApusByPresupuesto(id_presupuesto: String!): [Apu!]!
+  getApusByProyecto(id_proyecto: String!): [Apu!]!
+}
+
+extend type Mutation {
+  createApu(
+    id_partida: String!
+    id_presupuesto: String!
+    id_proyecto: String!
+    rendimiento: Float!
+    jornada: Float
+    costo_materiales: Float
+    costo_mano_obra: Float
+    costo_equipos: Float
+    costo_subcontratos: Float
+    costo_directo: Float
+    recursos: [RecursoApuInput!]!
+  ): Apu!
+
+  updateApu(
+    id_apu: String!
+    rendimiento: Float
+    jornada: Float
+    costo_materiales: Float
+    costo_mano_obra: Float
+    costo_equipos: Float
+    costo_subcontratos: Float
+    costo_directo: Float
+  ): Apu
+
+  deleteApu(id_apu: String!): Apu
+  
+  # Agregar recurso a un APU
+  addRecursoToApu(
+    id_apu: String!
+    recurso: RecursoApuInput!
+  ): Apu!
+  
+  # Actualizar recurso en un APU
+  updateRecursoInApu(
+    id_apu: String!
+    id_recurso_apu: String!
+    recurso: RecursoApuInput!
+  ): Apu!
+  
+  # Eliminar recurso de un APU
+  removeRecursoFromApu(
+    id_apu: String!
+    id_recurso_apu: String!
+  ): Apu!
+}
+
+# Input para crear/actualizar RecursoApu
+input RecursoApuInput {
+  recurso_id: String!
+  codigo_recurso: String!
+  descripcion: String!
+  unidad_medida: String!
+  tipo_recurso: TipoRecursoApu!  # Puede venir como nombre del monolito ("MATERIALES", "MANO DE OBRA", etc.) o como enum
+  tipo_recurso_codigo: String     # Código del tipo_costo_recurso (opcional pero recomendado: "MAT", "MO", "EQ", "SC")
+  id_precio_recurso: String       # REFERENCIA al precio compartido (opcional, se asigna automáticamente)
+  precio_usuario: Float!          # Precio que el usuario ingresa (se crea/actualiza en precio_recurso_presupuesto)
+  cuadrilla: Float
+  cantidad: Float!
+  desperdicio_porcentaje: Float!
+  cantidad_con_desperdicio: Float!
+  parcial: Float!
+  orden: Int!
+}
+
+

@@ -1,0 +1,23 @@
+# ============================================================================
+# ESQUEMA DE PROVINCIA - Catálogo de Provincias
+# ============================================================================
+
+type Provincia {
+  _id: ID
+  id_provincia: String
+  id_departamento: String
+  nombre_provincia: String
+  ubigeo: String
+  esNuevoFormato: Boolean
+}
+
+# ============================================================================
+# QUERIES
+# ============================================================================
+
+extend type Query {
+  listProvincias: [Provincia!]!
+  getProvincia(id_provincia: String!): Provincia
+  getProvinciasByDepartamento(id_departamento: String!): [Provincia!]!
+}
+

@@ -1,0 +1,21 @@
+# ============================================================================
+# ESQUEMA DE LOCALIDAD - Catálogo de Localidades
+# ============================================================================
+
+type Localidad {
+  _id: ID
+  id_localidad: String!
+  id_distrito: String
+  nombre_localidad: String
+}
+
+# ============================================================================
+# QUERIES
+# ============================================================================
+
+extend type Query {
+  listLocalidades: [Localidad!]!
+  getLocalidad(id_localidad: String!): Localidad
+  getLocalidadesByDistrito(id_distrito: String!): [Localidad!]!
+}
+

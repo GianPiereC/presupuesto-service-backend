@@ -1,0 +1,86 @@
+# ============================================================================
+# BATCH MUTATIONS PARA ESTRUCTURA DE PRESUPUESTO CON TRANSACCIONES
+# ============================================================================
+
+type BatchEstructuraResponse {
+  success: Boolean!
+  message: String
+  titulosCreados: [Titulo!]!
+  partidasCreadas: [Partida!]!
+  titulosActualizados: [Titulo!]!
+  partidasActualizadas: [Partida!]!
+  titulosEliminados: [String!]!
+  partidasEliminadas: [String!]!
+}
+
+input TituloCreateInput {
+  id_presupuesto: String!
+  id_proyecto: String!
+  id_titulo_padre: String
+  nivel: Int!
+  numero_item: String!
+  descripcion: String!
+  tipo: TipoTitulo!
+  orden: Int!
+  total_parcial: Float
+  temp_id: String  # ID temporal del frontend para mapeo
+}
+
+input TituloUpdateInput {
+  id_titulo: String!
+  id_titulo_padre: String
+  nivel: Int
+  numero_item: String
+  descripcion: String
+  tipo: TipoTitulo
+  orden: Int
+  total_parcial: Float
+}
+
+input PartidaCreateInput {
+  id_presupuesto: String!
+  id_proyecto: String!
+  id_titulo: String!
+  id_partida_padre: String
+  nivel_partida: Int!
+  numero_item: String!
+  codigo_partida: String!
+  descripcion: String!
+  unidad_medida: String!
+  metrado: Float!
+  precio_unitario: Float!
+  parcial_partida: Float
+  orden: Int!
+  estado: EstadoPartida
+  temp_id: String  # ID temporal del frontend para mapeo
+}
+
+input PartidaUpdateInput {
+  id_partida: String!
+  id_titulo: String
+  id_partida_padre: String
+  nivel_partida: Int
+  numero_item: String
+  codigo_partida: String
+  descripcion: String
+  unidad_medida: String
+  metrado: Float
+  precio_unitario: Float
+  parcial_partida: Float
+  orden: Int
+  estado: EstadoPartida
+}
+
+input BatchEstructuraInput {
+  titulosCrear: [TituloCreateInput!]!
+  partidasCrear: [PartidaCreateInput!]!
+  titulosActualizar: [TituloUpdateInput!]!
+  partidasActualizar: [PartidaUpdateInput!]!
+  titulosEliminar: [String!]!
+  partidasEliminar: [String!]!
+}
+
+extend type Mutation {
+  batchEstructuraPresupuesto(input: BatchEstructuraInput!): BatchEstructuraResponse!
+}
+

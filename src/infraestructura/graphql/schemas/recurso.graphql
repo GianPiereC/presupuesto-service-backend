@@ -1,0 +1,97 @@
+# ============================================================================
+# ESQUEMA DE RECURSO - Recursos desde inaconsbackend
+# ============================================================================
+
+type ImagenRecurso {
+  id: ID!
+  file: String!
+}
+
+type Unidad {
+  id: ID
+  unidad_id: String
+  nombre: String
+  descripcion: String
+}
+
+type TipoRecurso {
+  id: ID
+  nombre: String
+  codigo: String
+}
+
+type TipoCostoRecurso {
+  id: ID
+  nombre: String
+  codigo: String
+}
+
+type ClasificacionRecurso {
+  id: ID
+  nombre: String
+  parent_id: String
+}
+
+type Recurso {
+  id: ID!
+  recurso_id: String
+  codigo: String
+  nombre: String!
+  descripcion: String
+  cantidad: Float
+  unidad_id: String
+  unidad: Unidad
+  precio_actual: Float
+  tipo_recurso_id: String
+  tipo_recurso: TipoRecurso
+  tipo_costo_recurso_id: String
+  tipo_costo_recurso: TipoCostoRecurso
+  clasificacion_recurso_id: String
+  clasificacion_recurso: ClasificacionRecurso
+  fecha: String
+  vigente: Boolean
+  usado: Boolean
+  imagenes: [ImagenRecurso!]
+  activo_fijo: Boolean
+  combustible_ids: [String!]
+  estado_activo_fijo: String
+  fecha_checked_activo_fijo: String
+}
+
+type RecursoPaginationInfo {
+  page: Int!
+  total: Int!
+  itemsPage: Int!
+  pages: Int!
+}
+
+type ListRecursoPaginationResponse {
+  info: RecursoPaginationInfo!
+  status: String!
+  message: String
+  recursos: [Recurso!]!
+}
+
+input FilterRangeDateInput {
+  startDate: String
+  endDate: String
+}
+
+input ListRecursoPaginationInput {
+  page: Int
+  itemsPage: Int
+  searchTerm: String
+  estado_activo_fijo: String
+  filterRangeDate: FilterRangeDateInput
+}
+
+# ============================================================================
+# QUERIES
+# ============================================================================
+
+extend type Query {
+  listRecursosPaginated(input: ListRecursoPaginationInput): ListRecursoPaginationResponse!
+  listRecursosPaginatedStandard(pagination: PaginationInput!): PaginatedResponse
+  getRecursoById(id: ID!): Recurso
+}
+

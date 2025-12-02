@@ -1,0 +1,89 @@
+type DetallePartidaCompletoData {
+  metrado: Float!
+  precio: Float!
+  unidad_id: String!
+  jornada: Float!
+  rendimiento: Float!
+  total: Float
+}
+
+type RecursoApuCompletoData {
+  id_rec_comp_apu: String!
+  recurso_id: String!
+  unidad_id: String!
+  nombre: String!
+  especificaciones: String
+  descripcion: String
+}
+
+type PrecioRecursoCompletoData {
+  id_prp: String!
+  precio: Float!
+  fecha_creacion: String!
+}
+
+type ComposicionApuCompletoData {
+  id_composicion_apu: String!
+  cuadrilla: Float!
+  cantidad: Float!
+  recurso: RecursoApuCompletoData!
+  precio_recurso: PrecioRecursoCompletoData
+}
+
+type TituloCompletoData {
+  id_titulo: String!
+  item: String!
+  descripcion: String!
+  parcial: Float!
+  tipo_titulo: String!
+  nivel: Int!
+  orden: Int!
+  id_especialidad: String!
+  id_titulo_padre: String
+  id_titulo_plantilla: String
+  detalle: DetallePartidaCompletoData
+  apu: [ComposicionApuCompletoData]
+}
+
+type PresupuestoCompletoData {
+  id_presupuesto: String!
+  id_proyecto: String!
+  nombre_presupuesto: String!
+  costo_directo: Float!
+  total_presupuesto: Float!
+  fecha_creacion: String!
+  monto_igv: Float!
+  monto_utilidad: Float!
+  porcentaje_igv: Float!
+  porcentaje_utilidad: Float!
+  plazo: Int!
+  ppto_base: Float!
+  ppto_oferta: Float!
+  parcial_presupuesto: Float!
+  observaciones: String!
+  numeracion_presupuesto: Int
+}
+
+type PresupuestoCompleto {
+  presupuesto: PresupuestoCompletoData
+  titulos: [TituloCompletoData!]
+}
+
+type ClonacionPresupuestoResponse {
+  success: Boolean!
+  message: String!
+  id_presupuesto: String!
+  id_proyecto: String!
+}
+
+extend type Query {
+  getPresupuestoCompleto(id_presupuesto: String!): PresupuestoCompleto
+}
+
+extend type Mutation {
+  clonarPresupuestoCompleto(
+    id_presupuesto: String!
+    id_proyecto_destino: String!
+  ): ClonacionPresupuestoResponse
+}
+

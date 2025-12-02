@@ -1,0 +1,168 @@
+# ============================================================================
+# ESQUEMA DE AUTENTICACIÓN Y USUARIOS - Gestión de Auth, Usuarios y Roles
+# ============================================================================
+
+# ============================================================================
+# TIPOS DE AUTENTICACIÓN
+# ============================================================================
+
+type Role {
+  id: ID
+  nombre: String
+  descripcion: String
+  menusPermissions: [MenuPermission!]!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  deleted: Boolean!
+}
+
+type MenuPermission {
+  menuID: ID
+  permissions: Permission!
+}
+
+type Permission {
+  ver: Boolean!
+  crear: Boolean!
+  editar: Boolean!
+  eliminar: Boolean!
+}
+
+type LoginResponse {
+  id: ID
+  token: String
+  usuario: String
+  nombresA: String
+  role: Role
+}
+
+input MenuPermissionInput {
+  menuID: ID!
+  permissions: PermissionInput!
+}
+
+input PermissionInput {
+  ver: Boolean!
+  crear: Boolean!
+  editar: Boolean!
+  eliminar: Boolean!
+}
+
+# ============================================================================
+# TIPOS DE USUARIO
+# ============================================================================
+
+type Usuario {
+  id: ID!
+  nombres: String
+  apellidos: String
+  usuario: String
+  dni: String
+  cargo_id: Cargo
+  rol_id: String
+  telefono: String
+  firma: String
+  foto_perfil: String
+  email: String
+}
+
+input UsuarioInput {
+  nombres: String
+  apellidos: String
+  usuario: String
+  dni: String
+  contrasenna: String
+  cargo_id: String
+  rol_id: String
+  telefono: String
+  firma: String
+  foto_perfil: String
+  email: String
+}
+
+type Cargo {
+  id: ID!
+  nombre: String
+  descripcion: String
+  gerarquia: Int
+}
+
+# ============================================================================
+# TIPOS DE EMPRESA
+# ============================================================================
+
+type Empresa {
+  id: ID!
+  nombre_comercial: String!
+  razon_social: String!
+  descripcion: String
+  estado: String
+  regimen_fiscal: String
+  ruc: String
+  imagenes: [String]
+  color: String
+}
+
+type DeleteResponse {
+  success: Boolean
+  message: String
+}
+
+input EmpresaInput {
+  nombre_comercial: String!
+  razon_social: String!
+  descripcion: String
+  estado: String!
+  regimen_fiscal: String
+  ruc: String!
+  imagenes: [String]
+  color: String
+}
+
+# ============================================================================
+# QUERIES
+# ============================================================================
+
+extend type Query {
+  # Auth/Roles
+  listRoles: [Role!]!
+  getRole(id: ID!): Role
+  
+  # Usuario
+  getUsuario(id: ID!): Usuario
+  getAllUsuarios: [Usuario]
+  usuariosCargo: [Usuario]
+  getUsuariosByRegistrosGeneralesContables: [Usuario]
+  
+  # Empresa
+  listEmpresas: [Empresa!]!
+  getEmpresaById(id: ID!): Empresa
+  listEmpresasPaginated(pagination: PaginationInput!): PaginatedResponse
+  listEmpresasWithFilters(filters: [FilterInput!]!, pagination: PaginationInput): PaginatedResponse
+  searchEmpresas(search: SearchInput!, pagination: PaginationInput): PaginatedResponse
+  countEmpresas(filters: [FilterInput!]): Int
+}
+
+# ============================================================================
+# MUTATIONS
+# ============================================================================
+
+extend type Mutation {
+  # Auth
+  login(usuario: String, contrasenna: String): LoginResponse
+  
+  # Roles
+  addRole(nombre: String!, descripcion: String!, menusPermissions: [MenuPermissionInput!]!): Role!
+  updateRole(id: ID!, nombre: String!, descripcion: String!, menusPermissions: [MenuPermissionInput!]!): Role!
+  deleteRole(id: ID!): Role
+  
+  # Usuario
+  createUsuario(data: UsuarioInput): Usuario
+  updateUsuario(id: ID!, data: UsuarioInput!): Usuario
+  deleteUsuario(id: ID!): Usuario
+  
+  # Empresa
+  addEmpresa(data: EmpresaInput!): Empresa
+  updateEmpresa(id: ID!, data: EmpresaInput!): Empresa
+  deleteEmpresa(id: ID!): DeleteResponse
+}
