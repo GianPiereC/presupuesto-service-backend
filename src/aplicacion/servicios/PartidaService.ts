@@ -52,31 +52,33 @@ export class PartidaService extends BaseService<Partida> {
   }
 
   async crear(data: Partial<Partida>): Promise<Partida> {
-    // Generar ID si no existe
-    if (!data.id_partida) {
-      data.id_partida = await PartidaModel.generateNextId();
-    }
+    // Generar ID si no existe - crear objeto con id_partida desde el inicio
+    const idPartida = data.id_partida || await PartidaModel.generateNextId();
+    const partidaData: Partial<Partida> & { id_partida: string } = {
+      ...data,
+      id_partida: idPartida
+    };
     
     // Validar unicidad de codigo_partida por proyecto
-    if (data.codigo_partida && data.id_proyecto) {
+    if (partidaData.codigo_partida && partidaData.id_proyecto) {
       const existente = await this.partidaRepository.obtenerPorCodigoYProyecto(
-        data.codigo_partida,
-        data.id_proyecto
+        partidaData.codigo_partida,
+        partidaData.id_proyecto
       );
       if (existente) {
         throw new ValidationException(
-          `Ya existe una partida con el código "${data.codigo_partida}" en este proyecto`,
+          `Ya existe una partida con el código "${partidaData.codigo_partida}" en este proyecto`,
           'codigo_partida'
         );
       }
     }
     
     // Calcular parcial si no existe
-    if (data.metrado !== undefined && data.precio_unitario !== undefined) {
-      data.parcial_partida = (data.metrado || 0) * (data.precio_unitario || 0);
+    if (partidaData.metrado !== undefined && partidaData.precio_unitario !== undefined) {
+      partidaData.parcial_partida = (partidaData.metrado || 0) * (partidaData.precio_unitario || 0);
     }
     
-    const partidaCreada = await this.partidaRepository.create(data);
+    const partidaCreada = await this.partidaRepository.create(partidaData);
     
     // Recalcular totales del título después de crear la partida
     if (this.recalculoTotalesService && partidaCreada.id_titulo && partidaCreada.id_presupuesto) {
@@ -171,7 +173,7 @@ export class PartidaService extends BaseService<Partida> {
 
       logger.debug('[PartidaService] Eliminando partida', {
         id_partida,
-        id_titulo,
+        idTitulo,
         parcial_partida: partida.parcial_partida
       });
 
@@ -188,7 +190,7 @@ export class PartidaService extends BaseService<Partida> {
             await this.apuService.eliminar(apuAsociado.id_apu);
           }
         } catch (error) {
-          logger.error('[PartidaService] Error al eliminar APU asociado:', error);
+          logger.error('[PartidaService] Error al eliminar APU asociado:', error as Error);
           // No lanzar error para no interrumpir la eliminación de la partida
         }
       } else {

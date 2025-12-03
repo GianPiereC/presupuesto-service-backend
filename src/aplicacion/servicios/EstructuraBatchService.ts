@@ -1,14 +1,13 @@
 import mongoose from 'mongoose';
 import { TituloService } from './TituloService';
-import { PartidaService } from './PartidaService';
+
 import { RecalculoTotalesService } from './RecalculoTotalesService';
 import { Titulo } from '../../dominio/entidades/Titulo';
 import { Partida } from '../../dominio/entidades/Partida';
 import { TituloModel } from '../../infraestructura/persistencia/mongo/schemas/TituloSchema';
 import { PartidaModel } from '../../infraestructura/persistencia/mongo/schemas/PartidaSchema';
 import { ApuModel } from '../../infraestructura/persistencia/mongo/schemas/ApuSchema';
-import { TituloMongoRepository } from '../../infraestructura/persistencia/mongo/TituloMongoRepository';
-import { PartidaMongoRepository } from '../../infraestructura/persistencia/mongo/PartidaMongoRepository';
+
 import { ValidationException } from '../../dominio/exceptions/DomainException';
 
 export interface TituloCreateInput {
@@ -92,9 +91,7 @@ export interface BatchEstructuraResponse {
 export class EstructuraBatchService {
   constructor(
     private readonly tituloService: TituloService,
-    private readonly partidaService: PartidaService,
-    private readonly tituloRepository: TituloMongoRepository,
-    private readonly partidaRepository: PartidaMongoRepository,
+
     private readonly recalculoTotalesService?: RecalculoTotalesService
   ) {}
 
@@ -178,6 +175,9 @@ export class EstructuraBatchService {
       partidasEliminadas: [],
     };
 
+    const titulosAEliminarInfo: Array<{ id_titulo: string; id_titulo_padre: string | null; id_presupuesto: string }> = [];
+    const partidasAEliminarInfo: Array<{ id_partida: string; id_titulo: string; id_presupuesto: string }> = [];
+
     try {
       await session.withTransaction(async () => {
       // Mapeo de IDs temporales a IDs reales
@@ -192,6 +192,7 @@ export class EstructuraBatchService {
         let progreso = false;
         for (let i = titulosParaCrear.length - 1; i >= 0; i--) {
           const tituloInput = titulosParaCrear[i];
+          if (!tituloInput) continue;
           const idPadre = tituloInput.id_titulo_padre;
 
           // Si no tiene padre o el padre ya existe o ya fue creado
@@ -205,7 +206,9 @@ export class EstructuraBatchService {
               ? mapeoIdsTitulos.get(idPadre)!
               : idPadre;
 
-            const tituloData: Partial<Titulo> = {
+            const idTitulo = await TituloModel.generateNextId();
+            const tituloData: Partial<Titulo> & { id_titulo: string } = {
+              id_titulo: idTitulo,
               id_presupuesto: tituloInput.id_presupuesto,
               id_proyecto: tituloInput.id_proyecto,
               id_titulo_padre: idPadreReal || null,
@@ -216,11 +219,6 @@ export class EstructuraBatchService {
               orden: tituloInput.orden,
               total_parcial: tituloInput.total_parcial || 0,
             };
-
-            // Generar ID si no existe
-            if (!tituloData.id_titulo) {
-              tituloData.id_titulo = await TituloModel.generateNextId();
-            }
 
             // Validar unicidad de numero_item por proyecto
             if (tituloData.numero_item && tituloData.id_proyecto) {
@@ -263,7 +261,9 @@ export class EstructuraBatchService {
           idTituloReal = mapeoIdsTitulos.get(partidaInput.id_titulo)!;
         }
 
-        const partidaData: Partial<Partida> = {
+        const idPartida = await PartidaModel.generateNextId();
+        const partidaData: Partial<Partida> & { id_partida: string } = {
+          id_partida: idPartida,
           id_presupuesto: partidaInput.id_presupuesto,
           id_proyecto: partidaInput.id_proyecto,
           id_titulo: idTituloReal,
@@ -279,11 +279,6 @@ export class EstructuraBatchService {
           orden: partidaInput.orden,
           estado: partidaInput.estado || 'Activa',
         };
-
-        // Generar ID si no existe
-        if (!partidaData.id_partida) {
-          partidaData.id_partida = await PartidaModel.generateNextId();
-        }
 
         // Validar unicidad de codigo_partida por proyecto
         if (partidaData.codigo_partida && partidaData.id_proyecto) {
@@ -414,7 +409,7 @@ export class EstructuraBatchService {
       }
 
       // 5. Obtener información de títulos antes de eliminar (para recalcular después)
-      const titulosAEliminarInfo: Array<{ id_titulo: string; id_titulo_padre: string | null; id_presupuesto: string }> = [];
+      titulosAEliminarInfo.length = 0;
       for (const id_titulo of input.titulosEliminar) {
         const titulo = await TituloModel.findOne({ id_titulo }).session(session);
         if (titulo) {
@@ -469,7 +464,7 @@ export class EstructuraBatchService {
       }
 
       // 6. Obtener información de partidas antes de eliminar (para recalcular después)
-      const partidasAEliminarInfo: Array<{ id_partida: string; id_titulo: string; id_presupuesto: string }> = [];
+      partidasAEliminarInfo.length = 0;
       for (const id_partida of input.partidasEliminar) {
         const partida = await PartidaModel.findOne({ id_partida }).session(session);
         if (partida) {
@@ -596,6 +591,7 @@ export class EstructuraBatchService {
         let progreso = false;
         for (let i = titulosParaCrear.length - 1; i >= 0; i--) {
           const tituloInput = titulosParaCrear[i];
+          if (!tituloInput) continue;
           const idPadre = tituloInput.id_titulo_padre;
 
           const puedeCrear = !idPadre ||
@@ -608,7 +604,9 @@ export class EstructuraBatchService {
               ? mapeoIdsTitulos.get(idPadre)!
               : idPadre;
 
-            const tituloData: Partial<Titulo> = {
+            const idTitulo = await TituloModel.generateNextId();
+            const tituloData: Partial<Titulo> & { id_titulo: string } = {
+              id_titulo: idTitulo,
               id_presupuesto: tituloInput.id_presupuesto,
               id_proyecto: tituloInput.id_proyecto,
               id_titulo_padre: idPadreReal || null,
@@ -619,10 +617,6 @@ export class EstructuraBatchService {
               orden: tituloInput.orden,
               total_parcial: tituloInput.total_parcial || 0,
             };
-
-            if (!tituloData.id_titulo) {
-              tituloData.id_titulo = await TituloModel.generateNextId();
-            }
 
             const nuevoTituloDoc = await TituloModel.create(tituloData);
             const nuevoTitulo = this.toDomainTitulo(nuevoTituloDoc);
@@ -656,7 +650,9 @@ export class EstructuraBatchService {
           idTituloReal = mapeoIdsTitulos.get(partidaInput.id_titulo)!;
         }
 
-        const partidaData: Partial<Partida> = {
+        const idPartida = await PartidaModel.generateNextId();
+        const partidaData: Partial<Partida> & { id_partida: string } = {
+          id_partida: idPartida,
           id_presupuesto: partidaInput.id_presupuesto,
           id_proyecto: partidaInput.id_proyecto,
           id_titulo: idTituloReal,
@@ -672,10 +668,6 @@ export class EstructuraBatchService {
           orden: partidaInput.orden,
           estado: partidaInput.estado || 'Activa',
         };
-
-        if (!partidaData.id_partida) {
-          partidaData.id_partida = await PartidaModel.generateNextId();
-        }
 
         const nuevaPartidaDoc = await PartidaModel.create(partidaData);
         const nuevaPartida = this.toDomainPartida(nuevaPartidaDoc);
@@ -800,10 +792,10 @@ export class EstructuraBatchService {
       const titulosEliminadosData: Array<{ data: any; hijos: any[]; partidas: any[] }> = [];
       const partidasEliminadasData: Array<{ data: any; subpartidas: any[] }> = [];
       
-      const eliminarTituloRecursivo = async (id_titulo: string): Promise<{ titulo: any; hijos: any[]; partidas: any[] }> => {
+      const eliminarTituloRecursivo = async (id_titulo: string): Promise<{ data: any; hijos: any[]; partidas: any[] }> => {
         const titulo = await TituloModel.findOne({ id_titulo });
         if (!titulo) {
-          return { titulo: null, hijos: [], partidas: [] };
+          return { data: null, hijos: [], partidas: [] };
         }
         
         const tituloData = titulo.toObject();
@@ -827,13 +819,13 @@ export class EstructuraBatchService {
         // Eliminar el título
         await TituloModel.deleteOne({ id_titulo });
         
-        return { titulo: tituloData, hijos, partidas };
+        return { data: tituloData, hijos, partidas };
       };
 
-      const eliminarPartidaRecursiva = async (id_partida: string): Promise<{ partida: any; subpartidas: any[] }> => {
+      const eliminarPartidaRecursiva = async (id_partida: string): Promise<{ data: any; subpartidas: any[] }> => {
         const partida = await PartidaModel.findOne({ id_partida });
         if (!partida) {
-          return { partida: null, subpartidas: [] };
+          return { data: null, subpartidas: [] };
         }
 
         const partidaData = partida.toObject();
@@ -852,12 +844,12 @@ export class EstructuraBatchService {
         // Eliminar la partida
         await PartidaModel.deleteOne({ id_partida });
 
-        return { partida: partidaData, subpartidas };
+        return { data: partidaData, subpartidas };
       };
 
       // Función para restaurar partidas recursivamente
-      const restaurarPartidaRecursiva = async (partidaData: { partida: any; subpartidas: any[] }): Promise<void> => {
-        if (!partidaData.partida) return;
+      const restaurarPartidaRecursiva = async (partidaData: { data: any; subpartidas: any[] }): Promise<void> => {
+        if (!partidaData.data) return;
         
         // Restaurar subpartidas primero
         for (const subpartida of partidaData.subpartidas) {
@@ -865,12 +857,12 @@ export class EstructuraBatchService {
         }
         
         // Restaurar la partida
-        await PartidaModel.create(partidaData.partida);
+        await PartidaModel.create(partidaData.data);
       };
 
       // Función para restaurar títulos recursivamente
-      const restaurarTituloRecursivo = async (tituloData: { titulo: any; hijos: any[]; partidas: any[] }): Promise<void> => {
-        if (!tituloData.titulo) return;
+      const restaurarTituloRecursivo = async (tituloData: { data: any; hijos: any[]; partidas: any[] }): Promise<void> => {
+        if (!tituloData.data) return;
         
         // Restaurar hijos primero
         for (const hijo of tituloData.hijos) {
@@ -883,7 +875,7 @@ export class EstructuraBatchService {
         }
         
         // Restaurar el título
-        await TituloModel.create(tituloData.titulo);
+        await TituloModel.create(tituloData.data);
       };
 
       // Eliminar títulos
@@ -934,17 +926,17 @@ export class EstructuraBatchService {
       
       // Títulos eliminados (agregar el padre)
       for (const eliminado of titulosEliminadosData) {
-        if (eliminado.titulo) {
-          if (eliminado.titulo.id_titulo_padre) {
-            titulosAfectados.add(eliminado.titulo.id_titulo_padre);
+        if (eliminado.data) {
+          if (eliminado.data.id_titulo_padre) {
+            titulosAfectados.add(eliminado.data.id_titulo_padre);
           }
         }
       }
       
       // Partidas eliminadas (agregar el título)
       for (const eliminada of partidasEliminadasData) {
-        if (eliminada.partida && eliminada.partida.id_titulo) {
-          titulosAfectados.add(eliminada.partida.id_titulo);
+        if (eliminada.data && eliminada.data.id_titulo) {
+          titulosAfectados.add(eliminada.data.id_titulo);
         }
       }
       
@@ -974,7 +966,10 @@ export class EstructuraBatchService {
       // Rollback manual: revertir todas las operaciones en orden inverso
       try {
         for (let i = operacionesRollback.length - 1; i >= 0; i--) {
-          await operacionesRollback[i]();
+          const operacion = operacionesRollback[i];
+          if (operacion) {
+            await operacion();
+          }
         }
       } catch (rollbackError) {
         console.error('Error durante rollback:', rollbackError);

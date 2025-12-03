@@ -15,6 +15,7 @@ export class InfraestructuraMongoRepository extends BaseMongoRepository<Infraest
   protected toDomain(doc: any): Infraestructura {
     return {
       _id: doc._id?.toString(),
+      id: doc.id_infraestructura,
       id_infraestructura: doc.id_infraestructura,
       nombre_infraestructura: doc.nombre_infraestructura,
       tipo_infraestructura: doc.tipo_infraestructura,
@@ -33,7 +34,22 @@ export class InfraestructuraMongoRepository extends BaseMongoRepository<Infraest
   /**
    * Busca por id_infraestructura en lugar de _id
    */
-  async findById(id: string): Promise<Infraestructura | null> {
+  override async findById(id: string): Promise<Infraestructura | null> {
+    return this.obtenerPorIdInfraestructura(id);
+  }
+
+  /**
+   * Lista todas las infraestructuras
+   */
+  async listInfraestructuras(): Promise<Infraestructura[]> {
+    const docs = await this.model.find().lean();
+    return docs.map(doc => this.toDomain(doc));
+  }
+
+  /**
+   * Obtiene una infraestructura por ID
+   */
+  async getInfraestructuraById(id: string): Promise<Infraestructura | null> {
     return this.obtenerPorIdInfraestructura(id);
   }
 

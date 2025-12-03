@@ -1,16 +1,21 @@
 import { BaseResolver } from './BaseResolver';
 import { InfraestructuraService } from '../../../aplicacion/servicios/InfraestructuraService';
 import { ErrorHandler } from './ErrorHandler';
+import { Infraestructura } from '../../../dominio/entidades/Infraestructura';
 
-export class InfraestructuraResolver extends BaseResolver {
+export class InfraestructuraResolver extends BaseResolver<Infraestructura> {
   private infraestructuraService: InfraestructuraService;
 
   constructor(infraestructuraService: InfraestructuraService) {
-    super();
+    super(infraestructuraService);
     this.infraestructuraService = infraestructuraService;
   }
 
-  getResolvers() {
+  protected getEntityName(): string {
+    return 'Infraestructura';
+  }
+
+  override getResolvers() {
     return {
       Query: {
         listInfraestructuras: async () => {

@@ -5,6 +5,7 @@ import { VersionadoPresupuestoService } from './VersionadoPresupuestoService';
 import { BaseService } from './BaseService';
 import { PresupuestoModel } from '../../infraestructura/persistencia/mongo/schemas/PresupuestoSchema';
 import { ProyectoService } from './ProyectoService';
+import { IBaseRepository } from '../../dominio/repositorios/IBaseRepository';
 
 export class AprobacionPresupuestoService extends BaseService<AprobacionPresupuesto> {
   private readonly aprobacionRepository: IAprobacionPresupuestoRepository;
@@ -18,7 +19,7 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
     versionadoService: VersionadoPresupuestoService,
     proyectoService: ProyectoService
   ) {
-    super(aprobacionRepository);
+    super({} as IBaseRepository<AprobacionPresupuesto>);
     this.aprobacionRepository = aprobacionRepository;
     this.presupuestoRepository = presupuestoRepository;
     this.versionadoService = versionadoService;
@@ -223,7 +224,7 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
         await this.presupuestoRepository.update(versionMeta.id_presupuesto, {
           estado: 'aprobado',
           version: nuevoNumeroVersion,
-          estado_aprobacion: null
+          estado_aprobacion: undefined
         });
       }
     }
@@ -259,7 +260,7 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
       await this.presupuestoRepository.update(versionMeta.id_presupuesto, {
         estado: 'aprobado',
         version: nuevoNumeroVersion,
-        estado_aprobacion: null
+        estado_aprobacion: undefined
       });
 
       console.log(`[AprobacionPresupuestoService] Versión META aprobada: ${versionMeta.id_presupuesto} (V${aprobacion.version_presupuesto} → V${nuevoNumeroVersion})`);
@@ -282,7 +283,7 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
         aprobacion.tipo_aprobacion !== 'NUEVA_VERSION_META' || 
         !aprobacion.version_presupuesto) {
       await this.presupuestoRepository.update(aprobacion.id_presupuesto, {
-        estado_aprobacion: null,
+        estado_aprobacion: undefined,
         estado: 'aprobado'
       });
     }
@@ -329,7 +330,7 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
           // Cambiar la versión a estado rechazado (no borrador, para que aparezca como rechazada)
           await this.presupuestoRepository.update(versionMeta.id_presupuesto, {
             estado: 'rechazado',
-            estado_aprobacion: null
+            estado_aprobacion: undefined
           });
           console.log(`[AprobacionPresupuestoService] Versión META rechazada: ${versionMeta.id_presupuesto} (V${aprobacion.version_presupuesto})`);
         } else {
@@ -338,7 +339,7 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
       } else {
         // Para otros tipos, actualizar el padre
         await this.presupuestoRepository.update(aprobacion.id_presupuesto, {
-          estado_aprobacion: null,
+          estado_aprobacion: undefined,
           estado: 'rechazado'
         });
       }

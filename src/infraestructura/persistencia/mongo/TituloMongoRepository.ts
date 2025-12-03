@@ -54,11 +54,11 @@ export class TituloMongoRepository extends BaseMongoRepository<Titulo> implement
     return docs.map(doc => this.toDomain(doc));
   }
 
-  async findById(id: string): Promise<Titulo | null> {
+  override async findById(id: string): Promise<Titulo | null> {
     return this.obtenerPorIdTitulo(id);
   }
 
-  async update(id: string, data: Partial<Titulo>): Promise<Titulo | null> {
+  override async update(id: string, data: Partial<Titulo>): Promise<Titulo | null> {
     const updated = await this.model.findOneAndUpdate(
       { id_titulo: id },
       { $set: data },
@@ -67,7 +67,7 @@ export class TituloMongoRepository extends BaseMongoRepository<Titulo> implement
     return updated ? this.toDomain(updated) : null;
   }
 
-  async delete(id: string): Promise<boolean> {
+  override async delete(id: string): Promise<boolean> {
     const deleted = await this.model.findOneAndDelete({ id_titulo: id });
     return !!deleted;
   }

@@ -18,8 +18,9 @@ export class RecursoApu {
   ) {}
 
   // Función helper para truncar a 4 decimales (para cuadrilla y cantidad)
-  private truncateToFour(num: number): number {
-    return Math.round(num * 10000) / 10000;
+  // @ts-ignore - Método reservado para uso futuro
+  private truncateToFour(_num: number): number {
+    return Math.round(_num * 10000) / 10000;
   }
 
   // Función helper para redondear a 2 decimales (para PU y parciales)

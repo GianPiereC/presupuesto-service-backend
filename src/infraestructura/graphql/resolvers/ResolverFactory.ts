@@ -308,11 +308,8 @@ export class ResolverFactory {
     // Registrar EstructuraBatchService
     container.register('EstructuraBatchService', (c) => {
       const tituloService = c.resolve<TituloService>('TituloService');
-      const partidaService = c.resolve<PartidaService>('PartidaService');
-      const tituloRepo = c.resolve<TituloMongoRepository>('TituloMongoRepository');
-      const partidaRepo = c.resolve<PartidaMongoRepository>('PartidaMongoRepository');
       const recalculoTotalesService = c.resolve<RecalculoTotalesService>('RecalculoTotalesService');
-      return new EstructuraBatchService(tituloService, partidaService, tituloRepo, partidaRepo, recalculoTotalesService);
+      return new EstructuraBatchService(tituloService, recalculoTotalesService);
     }, true);
 
     // Registrar PrecioRecursoPresupuestoMongoRepository

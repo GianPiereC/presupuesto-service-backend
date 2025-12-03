@@ -47,11 +47,11 @@ export class PrecioRecursoPresupuestoMongoRepository
     return doc ? this.toDomain(doc) : null;
   }
 
-  async findById(id: string): Promise<PrecioRecursoPresupuesto | null> {
+  override async findById(id: string): Promise<PrecioRecursoPresupuesto | null> {
     return this.obtenerPorIdPrecioRecurso(id);
   }
 
-  async update(id: string, data: Partial<PrecioRecursoPresupuesto>): Promise<PrecioRecursoPresupuesto | null> {
+  override async update(id: string, data: Partial<PrecioRecursoPresupuesto>): Promise<PrecioRecursoPresupuesto | null> {
     const updated = await this.model.findOneAndUpdate(
       { id_precio_recurso: id },
       { $set: data },
@@ -60,7 +60,7 @@ export class PrecioRecursoPresupuestoMongoRepository
     return updated ? this.toDomain(updated) : null;
   }
 
-  async delete(id: string): Promise<boolean> {
+  override async delete(id: string): Promise<boolean> {
     const deleted = await this.model.findOneAndDelete({ id_precio_recurso: id });
     return !!deleted;
   }

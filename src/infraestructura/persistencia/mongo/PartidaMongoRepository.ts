@@ -64,11 +64,11 @@ export class PartidaMongoRepository extends BaseMongoRepository<Partida> impleme
     return docs.map(doc => this.toDomain(doc));
   }
 
-  async findById(id: string): Promise<Partida | null> {
+  override async findById(id: string): Promise<Partida | null> {
     return this.obtenerPorIdPartida(id);
   }
 
-  async update(id: string, data: Partial<Partida>): Promise<Partida | null> {
+  override async update(id: string, data: Partial<Partida>): Promise<Partida | null> {
     const updated = await this.model.findOneAndUpdate(
       { id_partida: id },
       { $set: data },
@@ -77,7 +77,7 @@ export class PartidaMongoRepository extends BaseMongoRepository<Partida> impleme
     return updated ? this.toDomain(updated) : null;
   }
 
-  async delete(id: string): Promise<boolean> {
+  override async delete(id: string): Promise<boolean> {
     const deleted = await this.model.findOneAndDelete({ id_partida: id });
     return !!deleted;
   }

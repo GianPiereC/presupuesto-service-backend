@@ -81,7 +81,7 @@ export class ProyectoService extends BaseService<Proyecto> {
    * Lista proyectos con paginación, filtros y búsqueda
    */
   async listarProyectosPaginated(input: PaginationFilterInput): Promise<PaginationResult<Proyecto>> {
-    const { pagination, filters, search } = input;
+    const { filters, search, ...pagination } = input;
     
     // Si hay búsqueda, usar el método search
     if (search && search.query) {
