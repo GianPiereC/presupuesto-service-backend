@@ -33,6 +33,7 @@ type AprobacionPresupuesto {
 enum TipoAprobacion {
   LICITACION_A_CONTRACTUAL
   CONTRACTUAL_A_META
+  NUEVA_VERSION_META
 }
 
 enum EstadoAprobacion {

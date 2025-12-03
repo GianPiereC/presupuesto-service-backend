@@ -31,6 +31,7 @@ type Presupuesto {
   es_inmutable: Boolean     # Nullable para compatibilidad con datos antiguos
   es_activo: Boolean        # Nullable para compatibilidad con datos antiguos
   estado: EstadoPresupuesto  # Nullable para compatibilidad con datos antiguos
+  estado_aprobacion: EstadoAprobacionPresupuesto  # Estado de aprobación pendiente
   aprobacion_licitacion: AprobacionLicitacion
   aprobacion_meta: AprobacionMeta
 }
@@ -64,6 +65,24 @@ type AprobacionMeta {
   fecha_aprobacion: String
   comentario: String
   es_version_final: Boolean!
+}
+
+type EstadoAprobacionPresupuesto {
+  tipo: TipoAprobacionPresupuesto
+  estado: EstadoAprobacionEstado
+  id_aprobacion: String
+}
+
+enum TipoAprobacionPresupuesto {
+  LICITACION_A_CONTRACTUAL
+  CONTRACTUAL_A_META
+  NUEVA_VERSION_META
+}
+
+enum EstadoAprobacionEstado {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
 }
 
 extend type Query {
@@ -178,6 +197,13 @@ extend type Mutation {
     id_presupuesto_contractual: String!
     motivo: String
   ): Presupuesto!
+  
+  # Enviar versión META en estado borrador a aprobación
+  enviarVersionMetaAAprobacion(
+    id_presupuesto_meta: String!
+    usuario_solicitante_id: String!
+    comentario: String
+  ): AprobacionPresupuesto!
   
   # Actualizar presupuesto padre y propagar cambios a todos los hijos
   actualizarPresupuestoPadre(

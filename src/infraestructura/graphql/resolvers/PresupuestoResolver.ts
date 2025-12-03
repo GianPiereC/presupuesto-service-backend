@@ -402,6 +402,39 @@ export class PresupuestoResolver {
             args
           );
         },
+        enviarVersionMetaAAprobacion: async (_: any, args: any) => {
+          return await ErrorHandler.handleError(
+            async () => {
+              const aprobacion = await this.versionadoPresupuestoService.enviarVersionMetaAAprobacion(
+                args.id_presupuesto_meta,
+                args.usuario_solicitante_id,
+                args.comentario
+              );
+              
+              // Retornar la aprobación
+              return {
+                id_aprobacion: aprobacion.id_aprobacion,
+                id_presupuesto: aprobacion.id_presupuesto,
+                id_grupo_version: aprobacion.id_grupo_version,
+                id_proyecto: aprobacion.id_proyecto,
+                tipo_aprobacion: aprobacion.tipo_aprobacion,
+                usuario_solicitante_id: aprobacion.usuario_solicitante_id,
+                usuario_aprobador_id: aprobacion.usuario_aprobador_id,
+                estado: aprobacion.estado,
+                fecha_solicitud: aprobacion.fecha_solicitud,
+                fecha_aprobacion: aprobacion.fecha_aprobacion,
+                fecha_rechazo: aprobacion.fecha_rechazo,
+                comentario_solicitud: aprobacion.comentario_solicitud,
+                comentario_aprobacion: aprobacion.comentario_aprobacion,
+                comentario_rechazo: aprobacion.comentario_rechazo,
+                version_presupuesto: aprobacion.version_presupuesto,
+                monto_presupuesto: aprobacion.monto_presupuesto
+              };
+            },
+            'enviarVersionMetaAAprobacion',
+            args
+          );
+        },
         crearPresupuestoConVersion: async (_: any, args: any) => {
           return await ErrorHandler.handleError(
             async () => {
@@ -551,6 +584,7 @@ export class PresupuestoResolver {
         es_inmutable: presupuesto.es_inmutable,
         es_activo: presupuesto.es_activo,
         estado: presupuesto.estado,
+        estado_aprobacion: presupuesto.estado_aprobacion,
         aprobacion_licitacion: presupuesto.aprobacion_licitacion,
         aprobacion_meta: presupuesto.aprobacion_meta,
       };
@@ -584,6 +618,7 @@ export class PresupuestoResolver {
 
     // Extraer valores normalizados
     const estadoVal = presupuestoPlain.estado;
+    const estadoAprobacionVal = presupuestoPlain.estado_aprobacion;
     const esActivoVal = presupuestoPlain.es_activo;
     const esInmutableVal = presupuestoPlain.es_inmutable;
     const faseVal = presupuestoPlain.fase;
@@ -597,6 +632,10 @@ export class PresupuestoResolver {
       estado: estadoVal && typeof estadoVal === 'string' 
         ? estadoVal 
         : normalizarValor(estadoVal, null),
+      // Normalizar estado_aprobacion: si es null, undefined u objeto vacío, usar null
+      estado_aprobacion: estadoAprobacionVal && typeof estadoAprobacionVal === 'object' && !esObjetoVacio(estadoAprobacionVal)
+        ? estadoAprobacionVal
+        : normalizarValor(estadoAprobacionVal, null),
       // Normalizar es_activo: si es null, undefined u objeto vacío, usar false por defecto
       es_activo: esActivoVal === true || esActivoVal === false
         ? esActivoVal

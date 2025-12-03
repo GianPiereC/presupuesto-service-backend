@@ -405,13 +405,34 @@ export class VersionadoPresupuestoService {
       }
 
       // 2. Calcular el número de la nueva versión
-      const ultimaVersion = await PresupuestoModel.findOne({
-        id_grupo_version: presupuestoBase.id_grupo_version,
-      })
-        .sort({ version: -1 })
-        .lean();
+      // Si es fase META, calcular según el estado (borrador vs aprobado tienen numeración independiente)
+      const faseNuevaVersion = presupuestoBase.fase || 'LICITACION';
+      let nuevaVersionNum = 1;
+      
+      if (faseNuevaVersion === 'META') {
+        // Para META: buscar la última versión borrador (estado borrador/en_revision/rechazado)
+        const ultimaVersionBorrador = await PresupuestoModel.findOne({
+          id_grupo_version: presupuestoBase.id_grupo_version,
+          fase: 'META',
+          estado: { $in: ['borrador', 'en_revision', 'rechazado'] }
+        })
+          .sort({ version: -1 })
+          .lean();
+        
+        nuevaVersionNum = ultimaVersionBorrador && ultimaVersionBorrador.version 
+          ? ultimaVersionBorrador.version + 1 
+          : 1;
+      } else {
+        // Para otras fases: buscar la última versión de la misma fase
+        const ultimaVersion = await PresupuestoModel.findOne({
+          id_grupo_version: presupuestoBase.id_grupo_version,
+          fase: faseNuevaVersion,
+        })
+          .sort({ version: -1 })
+          .lean();
 
-      const nuevaVersionNum = ultimaVersion && ultimaVersion.version ? ultimaVersion.version + 1 : 1;
+        nuevaVersionNum = ultimaVersion && ultimaVersion.version ? ultimaVersion.version + 1 : 1;
+      }
 
       // 3. Obtener el presupuesto padre del grupo
       const padre = await PresupuestoModel.findOne({
@@ -431,11 +452,13 @@ export class VersionadoPresupuestoService {
       id_proyecto: presupuestoBase.id_proyecto,
       nombre_presupuesto: presupuestoBase.nombre_presupuesto,
       id_grupo_version: presupuestoBase.id_grupo_version,
-      fase: 'LICITACION', // Nueva versión desde otra versión inicia en LICITACION
+      fase: faseNuevaVersion, // Mantener la fase del presupuesto base
       version: nuevaVersionNum,
       es_padre: false,
       id_presupuesto_base: padre.id_presupuesto,
       descripcion_version: descripcion_version || undefined,
+      // Si es fase META, establecer estado como 'borrador' para que aparezca en "Por Aprobar"
+      estado: faseNuevaVersion === 'META' ? 'borrador' : undefined,
       // Clonar campos financieros
       costo_directo: presupuestoBase.costo_directo || 0,
       monto_igv: presupuestoBase.monto_igv || 0,
@@ -552,38 +575,117 @@ export class VersionadoPresupuestoService {
     console.log(`[VersionadoPresupuestoService] Clonando ${apusBase.length} APUs del presupuesto ${id_presupuesto_base}`);
     console.log(`[VersionadoPresupuestoService] Partidas clonadas: ${mapaPartidasViejasANuevas.size}`);
 
-    // Verificar integridad de referencias antes de proceder
-    let apusConProblemas = 0;
-    for (const apuBase of apusBase) {
-      if (!mapaPartidasViejasANuevas.has(apuBase.id_partida)) {
-        apusConProblemas++;
+    // ✅ FILTRAR: Si hay múltiples APUs para la misma partida, tomar solo el primero
+    const apusPorPartida = new Map<string, Apu[]>();
+    for (const apu of apusBase) {
+      if (!apusPorPartida.has(apu.id_partida)) {
+        apusPorPartida.set(apu.id_partida, []);
+      }
+      apusPorPartida.get(apu.id_partida)!.push(apu);
+    }
+
+    // Detectar y loguear partidas con múltiples APUs
+    const partidasConMultiplesApus: Array<{ id_partida: string; cantidad: number; apus: string[] }> = [];
+    for (const [id_partida, apus] of apusPorPartida.entries()) {
+      if (apus.length > 1) {
+        partidasConMultiplesApus.push({
+          id_partida,
+          cantidad: apus.length,
+          apus: apus.map(a => a.id_apu)
+        });
       }
     }
 
-    if (apusConProblemas > 0) {
-      console.warn(`[VersionadoPresupuestoService] ⚠️  Se encontraron ${apusConProblemas} APUs con referencias rotas a partidas no existentes`);
+    if (partidasConMultiplesApus.length > 0) {
+      console.warn(`[VersionadoPresupuestoService] ⚠️  Se encontraron ${partidasConMultiplesApus.length} partidas con múltiples APUs. Se tomará solo el primero de cada partida.`, {
+        partidas_afectadas: partidasConMultiplesApus,
+        accion: 'Se procesará solo el primer APU de cada partida',
+        recomendacion: 'Revisar integridad de datos en el presupuesto base'
+      });
     }
 
-    for (const apuBase of apusBase) {
+    // Crear lista de APUs únicos (solo el primero de cada partida)
+    const apusUnicos = Array.from(apusPorPartida.values())
+      .map(apus => apus[0])
+      .filter((apu): apu is NonNullable<typeof apu> => apu !== undefined);
+
+    // Verificar integridad de referencias antes de proceder
+    let apusConReferenciasRotas = 0;
+    for (const apuBase of apusUnicos) {
+      if (!mapaPartidasViejasANuevas.has(apuBase.id_partida)) {
+        apusConReferenciasRotas++;
+      }
+    }
+
+    if (apusConReferenciasRotas > 0) {
+      console.warn(`[VersionadoPresupuestoService] ⚠️  Se encontraron ${apusConReferenciasRotas} APUs con referencias rotas a partidas no existentes`);
+    }
+
+    let apusCreados = 0;
+    let apusOmitidos = 0;
+    const partidasProcesadas = new Set<string>();
+
+    for (const apuBase of apusUnicos) {
       const id_apu_nuevo = await ApuModel.generateNextId();
       const id_partida_nueva = mapaPartidasViejasANuevas.get(apuBase.id_partida);
 
+      // ✅ VALIDACIÓN 1: Referencia rota (partida no existe en el mapa)
       if (!id_partida_nueva) {
         console.error(
-          `[VersionadoPresupuestoService] ❌ APU ${apuBase.id_apu} tiene una REFERENCIA ROTA: apunta a la partida ${apuBase.id_partida} que NO existe en el presupuesto ${id_presupuesto_base}.`,
+          `[VersionadoPresupuestoService] ❌ APU ${apuBase.id_apu} OMITIDO - Referencia rota:`,
           {
-            problema: 'Datos inconsistentes en la base de datos',
-            causa_posible: 'La partida fue eliminada pero el APU no se actualizó',
-            solucion: 'Este APU será omitido en la clonación',
-            id_apu_problematico: apuBase.id_apu,
-            id_partida_inexistente: apuBase.id_partida,
-            id_presupuesto_afectado: id_presupuesto_base,
-            partidas_disponibles: Array.from(mapaPartidasViejasANuevas.keys()).length,
-            recomendacion: 'Revisar integridad de datos - ejecutar validación antes de clonar'
+            problema: 'APU apunta a partida que no existe en el presupuesto base',
+            id_apu_original: apuBase.id_apu,
+            id_partida_original: apuBase.id_partida,
+            id_presupuesto_base: id_presupuesto_base,
+            id_presupuesto_nuevo: id_presupuesto_nuevo,
+            accion: 'APU omitido en la clonación',
+            causa_posible: 'La partida fue eliminada pero el APU no se actualizó'
           }
         );
-        continue; // Saltar este APU en lugar de fallar
+        apusOmitidos++;
+        continue;
       }
+
+      // ✅ VALIDACIÓN 2: Ya se procesó esta partida (duplicado en el mismo proceso)
+      if (partidasProcesadas.has(id_partida_nueva)) {
+        console.warn(
+          `[VersionadoPresupuestoService] ⚠️  APU ${apuBase.id_apu} OMITIDO - Partida ya procesada:`,
+          {
+            problema: 'Ya se procesó un APU para esta partida en esta clonación',
+            id_apu_duplicado: apuBase.id_apu,
+            id_partida: id_partida_nueva,
+            id_presupuesto_base: id_presupuesto_base,
+            accion: 'APU duplicado omitido'
+          }
+        );
+        apusOmitidos++;
+        continue;
+      }
+
+      // ✅ VALIDACIÓN 3: APU huérfano (ya existe en la base de datos)
+      const apuExistente = await this.apuRepository.obtenerPorPartida(id_partida_nueva);
+      if (apuExistente) {
+        console.warn(
+          `[VersionadoPresupuestoService] ⚠️  APU ${apuBase.id_apu} OMITIDO - APU huérfano detectado:`,
+          {
+            problema: 'Ya existe un APU para esta partida en la base de datos',
+            id_partida: id_partida_nueva,
+            id_apu_original: apuBase.id_apu,
+            id_apu_existente: apuExistente.id_apu,
+            id_presupuesto_existente: apuExistente.id_presupuesto,
+            id_presupuesto_base: id_presupuesto_base,
+            id_presupuesto_nuevo: id_presupuesto_nuevo,
+            accion: 'APU huérfano omitido para evitar error de clave duplicada',
+            causa_posible: 'APU de clonación anterior fallida o datos inconsistentes'
+          }
+        );
+        apusOmitidos++;
+        continue;
+      }
+
+      // Marcar esta partida como procesada
+      partidasProcesadas.add(id_partida_nueva);
 
       // Clonar recursos del APU generando nuevos IDs y actualizando referencias a precios
       const recursosClonados = apuBase.recursos.map((recurso) => {
@@ -609,21 +711,47 @@ export class VersionadoPresupuestoService {
         };
       });
 
-      await this.apuRepository.create({
-        id_apu: id_apu_nuevo,
-        id_presupuesto: id_presupuesto_nuevo,
-        id_proyecto: presupuestoBase.id_proyecto,
-        id_partida: id_partida_nueva,
-        rendimiento: apuBase.rendimiento,
-        jornada: apuBase.jornada,
-        recursos: recursosClonados as any, // El repositorio convertirá estos datos a RecursoApu
-        costo_materiales: apuBase.costo_materiales || 0,
-        costo_mano_obra: apuBase.costo_mano_obra || 0,
-        costo_equipos: apuBase.costo_equipos || 0,
-        costo_subcontratos: apuBase.costo_subcontratos || 0,
-        costo_directo: apuBase.costo_directo || 0,
-      } as Partial<Apu>);
+      try {
+        await this.apuRepository.create({
+          id_apu: id_apu_nuevo,
+          id_presupuesto: id_presupuesto_nuevo,
+          id_proyecto: presupuestoBase.id_proyecto,
+          id_partida: id_partida_nueva,
+          rendimiento: apuBase.rendimiento,
+          jornada: apuBase.jornada,
+          recursos: recursosClonados as any, // El repositorio convertirá estos datos a RecursoApu
+          costo_materiales: apuBase.costo_materiales || 0,
+          costo_mano_obra: apuBase.costo_mano_obra || 0,
+          costo_equipos: apuBase.costo_equipos || 0,
+          costo_subcontratos: apuBase.costo_subcontratos || 0,
+          costo_directo: apuBase.costo_directo || 0,
+        } as Partial<Apu>);
+        apusCreados++;
+      } catch (error: any) {
+        // Si es un error de clave duplicada, loguear y continuar
+        if (error.code === 11000 || error.message?.includes('duplicate key')) {
+          console.error(
+            `[VersionadoPresupuestoService] ❌ APU ${id_apu_nuevo} OMITIDO - Error de clave duplicada:`,
+            {
+              problema: 'Error E11000 duplicate key al crear APU',
+              id_apu_nuevo: id_apu_nuevo,
+              id_partida: id_partida_nueva,
+              id_presupuesto_base: id_presupuesto_base,
+              id_presupuesto_nuevo: id_presupuesto_nuevo,
+              error_code: error.code,
+              error_message: error.message,
+              accion: 'APU omitido para evitar fallo en clonación'
+            }
+          );
+          apusOmitidos++;
+          continue;
+        }
+        // Si es otro error, lanzarlo
+        throw error;
+      }
     }
+
+    console.log(`[VersionadoPresupuestoService] ✅ Clonación de APUs completada: ${apusCreados} creados, ${apusOmitidos} omitidos de ${apusBase.length} totales (${apusUnicos.length} únicos después de filtrar duplicados)`);
 
     return nuevoPresupuesto;
     } catch (error) {
@@ -737,6 +865,96 @@ export class VersionadoPresupuestoService {
     } as Partial<Presupuesto>);
 
     console.log(`[VersionadoPresupuestoService] Aprobación creada: ${id_aprobacion} para presupuesto ${presupuestoPadre.id_presupuesto}`);
+    
+    return nuevaAprobacion;
+  }
+
+  /**
+   * Enviar una versión META en estado borrador a aprobación
+   * Crea una aprobación de tipo NUEVA_VERSION_META y cambia el estado a en_revision
+   */
+  async enviarVersionMetaAAprobacion(
+    id_presupuesto_meta: string,
+    usuario_solicitante_id: string,
+    comentario?: string
+  ): Promise<AprobacionPresupuesto> {
+    // 1. Obtener la versión META que se quiere enviar a aprobación
+    const versionMeta = await this.presupuestoRepository.obtenerPorIdPresupuesto(id_presupuesto_meta);
+    
+    if (!versionMeta) {
+      throw new Error('Presupuesto no encontrado');
+    }
+    
+    if (versionMeta.es_padre) {
+      throw new Error('No se puede enviar un presupuesto padre a aprobación. Debe seleccionar una versión.');
+    }
+    
+    if (versionMeta.fase !== 'META') {
+      throw new Error('Solo se pueden enviar a aprobación presupuestos en fase META');
+    }
+    
+    if (versionMeta.estado !== 'borrador') {
+      throw new Error('Solo se pueden enviar a aprobación versiones en estado borrador');
+    }
+    
+    if (!versionMeta.id_grupo_version) {
+      throw new Error('La versión no tiene un grupo de versión asignado');
+    }
+    
+    // 2. Obtener el padre
+    const presupuestosPadre = await PresupuestoModel.find({
+      id_grupo_version: versionMeta.id_grupo_version,
+      es_padre: true
+    }).lean();
+    
+    if (!presupuestosPadre || presupuestosPadre.length === 0 || !presupuestosPadre[0]) {
+      throw new Error('No se encontró el presupuesto padre');
+    }
+    
+    const presupuestoPadre = presupuestosPadre[0];
+    if (!presupuestoPadre.id_presupuesto) {
+      throw new Error('El presupuesto padre no tiene id_presupuesto');
+    }
+
+    // 3. Verificar si ya existe una aprobación pendiente para esta versión
+    const aprobacionesExistentes = await this.aprobacionRepository.obtenerPorPresupuesto(presupuestoPadre.id_presupuesto);
+    const aprobacionPendiente = aprobacionesExistentes.find(
+      a => a.estado === 'PENDIENTE' && 
+           a.tipo_aprobacion === 'NUEVA_VERSION_META' &&
+           a.version_presupuesto === versionMeta.version
+    );
+    
+    if (aprobacionPendiente) {
+      throw new Error('Ya existe una aprobación pendiente para esta versión');
+    }
+
+    // 4. Crear registro de aprobación
+    const id_aprobacion = await AprobacionPresupuestoModel.generateNextId();
+    const nuevaAprobacion = await this.aprobacionRepository.crear({
+      id_aprobacion,
+      id_presupuesto: presupuestoPadre.id_presupuesto,
+      id_grupo_version: versionMeta.id_grupo_version,
+      id_proyecto: versionMeta.id_proyecto,
+      tipo_aprobacion: 'NUEVA_VERSION_META',
+      usuario_solicitante_id,
+      estado: 'PENDIENTE',
+      fecha_solicitud: new Date().toISOString(),
+      comentario_solicitud: comentario,
+      version_presupuesto: versionMeta.version ?? undefined,
+      monto_presupuesto: versionMeta.total_presupuesto
+    });
+
+    // 5. Actualizar el estado de la versión a en_revision
+    await this.presupuestoRepository.update(id_presupuesto_meta, {
+      estado: 'en_revision',
+      estado_aprobacion: {
+        tipo: 'NUEVA_VERSION_META',
+        estado: 'PENDIENTE',
+        id_aprobacion: id_aprobacion
+      }
+    } as Partial<Presupuesto>);
+
+    console.log(`[VersionadoPresupuestoService] Aprobación creada: ${id_aprobacion} para versión META ${id_presupuesto_meta}`);
     
     return nuevaAprobacion;
   }
@@ -878,15 +1096,108 @@ export class VersionadoPresupuestoService {
       // 7. Clonar APUs
       const apusBase = await this.apuRepository.obtenerPorPresupuesto(id_presupuesto_licitacion);
       
-      console.log(`[VersionadoPresupuestoService] Clonando ${apusBase.length} APUs...`);
-      for (const apuBase of apusBase) {
+      console.log(`[VersionadoPresupuestoService] Clonando ${apusBase.length} APUs del presupuesto ${id_presupuesto_licitacion} a CONTRACTUAL...`);
+
+      // ✅ FILTRAR: Si hay múltiples APUs para la misma partida, tomar solo el primero
+      const apusPorPartida = new Map<string, Apu[]>();
+      for (const apu of apusBase) {
+        if (!apusPorPartida.has(apu.id_partida)) {
+          apusPorPartida.set(apu.id_partida, []);
+        }
+        apusPorPartida.get(apu.id_partida)!.push(apu);
+      }
+
+      // Detectar y loguear partidas con múltiples APUs
+      const partidasConMultiplesApus: Array<{ id_partida: string; cantidad: number; apus: string[] }> = [];
+      for (const [id_partida, apus] of apusPorPartida.entries()) {
+        if (apus.length > 1) {
+          partidasConMultiplesApus.push({
+            id_partida,
+            cantidad: apus.length,
+            apus: apus.map(a => a.id_apu)
+          });
+        }
+      }
+
+      if (partidasConMultiplesApus.length > 0) {
+        console.warn(`[VersionadoPresupuestoService] ⚠️  Se encontraron ${partidasConMultiplesApus.length} partidas con múltiples APUs. Se tomará solo el primero de cada partida.`, {
+          partidas_afectadas: partidasConMultiplesApus,
+          accion: 'Se procesará solo el primer APU de cada partida',
+          recomendacion: 'Revisar integridad de datos en el presupuesto base'
+        });
+      }
+
+      // Crear lista de APUs únicos (solo el primero de cada partida)
+      const apusUnicos = Array.from(apusPorPartida.values())
+        .map(apus => apus[0])
+        .filter((apu): apu is NonNullable<typeof apu> => apu !== undefined);
+
+      let apusCreados = 0;
+      let apusOmitidos = 0;
+      const partidasProcesadas = new Set<string>();
+
+      for (const apuBase of apusUnicos) {
+        const id_apu_nuevo = await ApuModel.generateNextId();
         const id_partida_nueva = mapaPartidasViejasANuevas.get(apuBase.id_partida);
+
+        // ✅ VALIDACIÓN 1: Referencia rota (partida no existe en el mapa)
         if (!id_partida_nueva) {
-          console.warn(`[VersionadoPresupuestoService] APU ${apuBase.id_apu} referencia partida ${apuBase.id_partida} que no fue clonada. Saltando este APU.`);
+          console.error(
+            `[VersionadoPresupuestoService] ❌ APU ${apuBase.id_apu} OMITIDO - Referencia rota:`,
+            {
+              problema: 'APU apunta a partida que no existe en el presupuesto base',
+              id_apu_original: apuBase.id_apu,
+              id_partida_original: apuBase.id_partida,
+              id_presupuesto_base: id_presupuesto_licitacion,
+              id_presupuesto_nuevo: id_presupuesto_contractual,
+              accion: 'APU omitido en la clonación',
+              causa_posible: 'La partida fue eliminada pero el APU no se actualizó'
+            }
+          );
+          apusOmitidos++;
           continue;
         }
-        
-        const id_apu_nuevo = await ApuModel.generateNextId();
+
+        // ✅ VALIDACIÓN 2: Ya se procesó esta partida (duplicado en el mismo proceso)
+        if (partidasProcesadas.has(id_partida_nueva)) {
+          console.warn(
+            `[VersionadoPresupuestoService] ⚠️  APU ${apuBase.id_apu} OMITIDO - Partida ya procesada:`,
+            {
+              problema: 'Ya se procesó un APU para esta partida en esta clonación',
+              id_apu_duplicado: apuBase.id_apu,
+              id_partida: id_partida_nueva,
+              id_presupuesto_base: id_presupuesto_licitacion,
+              accion: 'APU duplicado omitido'
+            }
+          );
+          apusOmitidos++;
+          continue;
+        }
+
+        // ✅ VALIDACIÓN 3: APU huérfano (ya existe en la base de datos)
+        const apuExistente = await this.apuRepository.obtenerPorPartida(id_partida_nueva);
+        if (apuExistente) {
+          console.warn(
+            `[VersionadoPresupuestoService] ⚠️  APU ${apuBase.id_apu} OMITIDO - APU huérfano detectado:`,
+            {
+              problema: 'Ya existe un APU para esta partida en la base de datos',
+              id_partida: id_partida_nueva,
+              id_apu_original: apuBase.id_apu,
+              id_apu_existente: apuExistente.id_apu,
+              id_presupuesto_existente: apuExistente.id_presupuesto,
+              id_presupuesto_base: id_presupuesto_licitacion,
+              id_presupuesto_nuevo: id_presupuesto_contractual,
+              accion: 'APU huérfano omitido para evitar error de clave duplicada',
+              causa_posible: 'APU de clonación anterior fallida o datos inconsistentes'
+            }
+          );
+          apusOmitidos++;
+          continue;
+        }
+
+        // Marcar esta partida como procesada
+        partidasProcesadas.add(id_partida_nueva);
+
         const recursosClonados = apuBase.recursos.map((recurso) => {
           const id_precio_recurso_nuevo = recurso.id_precio_recurso
             ? mapaPreciosViejosANuevos.get(recurso.id_precio_recurso) || null
@@ -909,34 +1220,60 @@ export class VersionadoPresupuestoService {
           };
         });
         
-        await this.apuRepository.create({
-          id_apu: id_apu_nuevo,
-          id_presupuesto: id_presupuesto_contractual,
-          id_proyecto: versionLicitacion.id_proyecto,
-          id_partida: id_partida_nueva,
-          rendimiento: apuBase.rendimiento,
-          jornada: apuBase.jornada,
-          recursos: recursosClonados as any,
-          costo_materiales: apuBase.costo_materiales || 0,
-          costo_mano_obra: apuBase.costo_mano_obra || 0,
-          costo_equipos: apuBase.costo_equipos || 0,
-          costo_subcontratos: apuBase.costo_subcontratos || 0,
-          costo_directo: apuBase.costo_directo || 0,
-        } as Partial<Apu>);
+        try {
+          await this.apuRepository.create({
+            id_apu: id_apu_nuevo,
+            id_presupuesto: id_presupuesto_contractual,
+            id_proyecto: versionLicitacion.id_proyecto,
+            id_partida: id_partida_nueva,
+            rendimiento: apuBase.rendimiento,
+            jornada: apuBase.jornada,
+            recursos: recursosClonados as any,
+            costo_materiales: apuBase.costo_materiales || 0,
+            costo_mano_obra: apuBase.costo_mano_obra || 0,
+            costo_equipos: apuBase.costo_equipos || 0,
+            costo_subcontratos: apuBase.costo_subcontratos || 0,
+            costo_directo: apuBase.costo_directo || 0,
+          } as Partial<Apu>);
+          apusCreados++;
+        } catch (error: any) {
+          // Si es un error de clave duplicada, loguear y continuar
+          if (error.code === 11000 || error.message?.includes('duplicate key')) {
+            console.error(
+              `[VersionadoPresupuestoService] ❌ APU ${id_apu_nuevo} OMITIDO - Error de clave duplicada:`,
+              {
+                problema: 'Error E11000 duplicate key al crear APU',
+                id_apu_nuevo: id_apu_nuevo,
+                id_partida: id_partida_nueva,
+                id_presupuesto_base: id_presupuesto_licitacion,
+                id_presupuesto_nuevo: id_presupuesto_contractual,
+                error_code: error.code,
+                error_message: error.message,
+                accion: 'APU omitido para evitar fallo en clonación'
+              }
+            );
+            apusOmitidos++;
+            continue;
+          }
+          // Si es otro error, lanzarlo
+          throw error;
+        }
       }
+
+      console.log(`[VersionadoPresupuestoService] ✅ Clonación de APUs completada: ${apusCreados} creados, ${apusOmitidos} omitidos de ${apusBase.length} totales (${apusUnicos.length} únicos después de filtrar duplicados)`);
       
       console.log(`[VersionadoPresupuestoService] Clonado completado exitosamente`);
       
-      // 8. Guardar referencia de la versión aprobada (sin cambiar fase del padre)
+      // 8. Actualizar el padre a fase CONTRACTUAL
       const idPresupuestoPadre = presupuestoPadre.id_presupuesto as string;
       await this.presupuestoRepository.update(idPresupuestoPadre, {
+        fase: 'CONTRACTUAL',
         id_presupuesto_licitacion: id_presupuesto_licitacion,
         version_licitacion_aprobada: versionLicitacion.version ?? undefined,
         descripcion_version: motivo || undefined
-        // ❌ NO cambiar fase: el padre se queda en LICITACION
       } as Partial<Presupuesto>);
       
-      console.log(`[VersionadoPresupuestoService] Referencia de versión aprobada guardada en el padre`);
+      console.log(`[VersionadoPresupuestoService] Padre actualizado a fase CONTRACTUAL`);
       
       return nuevoPresupuestoContractual;
       
@@ -1027,7 +1364,7 @@ export class VersionadoPresupuestoService {
         nombre_presupuesto: versionContractual.nombre_presupuesto,
         id_grupo_version: versionContractual.id_grupo_version,
         fase: 'META',
-        version: 1,
+        version: 1, // Primera versión META siempre es V1
         es_padre: false,
         id_presupuesto_base: id_presupuesto_contractual,
         descripcion_version: descripcionCompleta,
@@ -1044,6 +1381,7 @@ export class VersionadoPresupuestoService {
         total_presupuesto: versionContractual.total_presupuesto,
         es_inmutable: false,
         es_activo: true,
+        estado: 'aprobado', // La primera versión META (V1) se crea como aprobada para aparecer en "Aprobadas"
         fecha_creacion: new Date().toISOString()
       } as Partial<Presupuesto>);
       
@@ -1112,15 +1450,108 @@ export class VersionadoPresupuestoService {
       // 8. Clonar APUs
       const apusBase = await this.apuRepository.obtenerPorPresupuesto(id_presupuesto_contractual);
       
-      console.log(`[VersionadoPresupuestoService] Clonando ${apusBase.length} APUs...`);
-      for (const apuBase of apusBase) {
+      console.log(`[VersionadoPresupuestoService] Clonando ${apusBase.length} APUs del presupuesto ${id_presupuesto_contractual} a META...`);
+
+      // ✅ FILTRAR: Si hay múltiples APUs para la misma partida, tomar solo el primero
+      const apusPorPartida = new Map<string, Apu[]>();
+      for (const apu of apusBase) {
+        if (!apusPorPartida.has(apu.id_partida)) {
+          apusPorPartida.set(apu.id_partida, []);
+        }
+        apusPorPartida.get(apu.id_partida)!.push(apu);
+      }
+
+      // Detectar y loguear partidas con múltiples APUs
+      const partidasConMultiplesApus: Array<{ id_partida: string; cantidad: number; apus: string[] }> = [];
+      for (const [id_partida, apus] of apusPorPartida.entries()) {
+        if (apus.length > 1) {
+          partidasConMultiplesApus.push({
+            id_partida,
+            cantidad: apus.length,
+            apus: apus.map(a => a.id_apu)
+          });
+        }
+      }
+
+      if (partidasConMultiplesApus.length > 0) {
+        console.warn(`[VersionadoPresupuestoService] ⚠️  Se encontraron ${partidasConMultiplesApus.length} partidas con múltiples APUs. Se tomará solo el primero de cada partida.`, {
+          partidas_afectadas: partidasConMultiplesApus,
+          accion: 'Se procesará solo el primer APU de cada partida',
+          recomendacion: 'Revisar integridad de datos en el presupuesto base'
+        });
+      }
+
+      // Crear lista de APUs únicos (solo el primero de cada partida)
+      const apusUnicos = Array.from(apusPorPartida.values())
+        .map(apus => apus[0])
+        .filter((apu): apu is NonNullable<typeof apu> => apu !== undefined);
+
+      let apusCreados = 0;
+      let apusOmitidos = 0;
+      const partidasProcesadas = new Set<string>();
+
+      for (const apuBase of apusUnicos) {
+        const id_apu_nuevo = await ApuModel.generateNextId();
         const id_partida_nueva = mapaPartidasViejasANuevas.get(apuBase.id_partida);
+
+        // ✅ VALIDACIÓN 1: Referencia rota (partida no existe en el mapa)
         if (!id_partida_nueva) {
-          console.warn(`[VersionadoPresupuestoService] APU ${apuBase.id_apu} referencia partida ${apuBase.id_partida} que no fue clonada. Saltando este APU.`);
+          console.error(
+            `[VersionadoPresupuestoService] ❌ APU ${apuBase.id_apu} OMITIDO - Referencia rota:`,
+            {
+              problema: 'APU apunta a partida que no existe en el presupuesto base',
+              id_apu_original: apuBase.id_apu,
+              id_partida_original: apuBase.id_partida,
+              id_presupuesto_base: id_presupuesto_contractual,
+              id_presupuesto_nuevo: id_presupuesto_meta,
+              accion: 'APU omitido en la clonación',
+              causa_posible: 'La partida fue eliminada pero el APU no se actualizó'
+            }
+          );
+          apusOmitidos++;
           continue;
         }
-        
-        const id_apu_nuevo = await ApuModel.generateNextId();
+
+        // ✅ VALIDACIÓN 2: Ya se procesó esta partida (duplicado en el mismo proceso)
+        if (partidasProcesadas.has(id_partida_nueva)) {
+          console.warn(
+            `[VersionadoPresupuestoService] ⚠️  APU ${apuBase.id_apu} OMITIDO - Partida ya procesada:`,
+            {
+              problema: 'Ya se procesó un APU para esta partida en esta clonación',
+              id_apu_duplicado: apuBase.id_apu,
+              id_partida: id_partida_nueva,
+              id_presupuesto_base: id_presupuesto_contractual,
+              accion: 'APU duplicado omitido'
+            }
+          );
+          apusOmitidos++;
+          continue;
+        }
+
+        // ✅ VALIDACIÓN 3: APU huérfano (ya existe en la base de datos)
+        const apuExistente = await this.apuRepository.obtenerPorPartida(id_partida_nueva);
+        if (apuExistente) {
+          console.warn(
+            `[VersionadoPresupuestoService] ⚠️  APU ${apuBase.id_apu} OMITIDO - APU huérfano detectado:`,
+            {
+              problema: 'Ya existe un APU para esta partida en la base de datos',
+              id_partida: id_partida_nueva,
+              id_apu_original: apuBase.id_apu,
+              id_apu_existente: apuExistente.id_apu,
+              id_presupuesto_existente: apuExistente.id_presupuesto,
+              id_presupuesto_base: id_presupuesto_contractual,
+              id_presupuesto_nuevo: id_presupuesto_meta,
+              accion: 'APU huérfano omitido para evitar error de clave duplicada',
+              causa_posible: 'APU de clonación anterior fallida o datos inconsistentes'
+            }
+          );
+          apusOmitidos++;
+          continue;
+        }
+
+        // Marcar esta partida como procesada
+        partidasProcesadas.add(id_partida_nueva);
+
         const recursosClonados = apuBase.recursos.map((recurso) => {
           const id_precio_recurso_nuevo = recurso.id_precio_recurso
             ? mapaPreciosViejosANuevos.get(recurso.id_precio_recurso) || null
@@ -1143,21 +1574,47 @@ export class VersionadoPresupuestoService {
           };
         });
         
-        await this.apuRepository.create({
-          id_apu: id_apu_nuevo,
-          id_presupuesto: id_presupuesto_meta,
-          id_proyecto: versionContractual.id_proyecto,
-          id_partida: id_partida_nueva,
-          rendimiento: apuBase.rendimiento,
-          jornada: apuBase.jornada,
-          recursos: recursosClonados as any,
-          costo_materiales: apuBase.costo_materiales || 0,
-          costo_mano_obra: apuBase.costo_mano_obra || 0,
-          costo_equipos: apuBase.costo_equipos || 0,
-          costo_subcontratos: apuBase.costo_subcontratos || 0,
-          costo_directo: apuBase.costo_directo || 0,
-        } as Partial<Apu>);
+        try {
+          await this.apuRepository.create({
+            id_apu: id_apu_nuevo,
+            id_presupuesto: id_presupuesto_meta,
+            id_proyecto: versionContractual.id_proyecto,
+            id_partida: id_partida_nueva,
+            rendimiento: apuBase.rendimiento,
+            jornada: apuBase.jornada,
+            recursos: recursosClonados as any,
+            costo_materiales: apuBase.costo_materiales || 0,
+            costo_mano_obra: apuBase.costo_mano_obra || 0,
+            costo_equipos: apuBase.costo_equipos || 0,
+            costo_subcontratos: apuBase.costo_subcontratos || 0,
+            costo_directo: apuBase.costo_directo || 0,
+          } as Partial<Apu>);
+          apusCreados++;
+        } catch (error: any) {
+          // Si es un error de clave duplicada, loguear y continuar
+          if (error.code === 11000 || error.message?.includes('duplicate key')) {
+            console.error(
+              `[VersionadoPresupuestoService] ❌ APU ${id_apu_nuevo} OMITIDO - Error de clave duplicada:`,
+              {
+                problema: 'Error E11000 duplicate key al crear APU',
+                id_apu_nuevo: id_apu_nuevo,
+                id_partida: id_partida_nueva,
+                id_presupuesto_base: id_presupuesto_contractual,
+                id_presupuesto_nuevo: id_presupuesto_meta,
+                error_code: error.code,
+                error_message: error.message,
+                accion: 'APU omitido para evitar fallo en clonación'
+              }
+            );
+            apusOmitidos++;
+            continue;
+          }
+          // Si es otro error, lanzarlo
+          throw error;
+        }
       }
+
+      console.log(`[VersionadoPresupuestoService] ✅ Clonación de APUs completada: ${apusCreados} creados, ${apusOmitidos} omitidos de ${apusBase.length} totales (${apusUnicos.length} únicos después de filtrar duplicados)`);
       
       console.log(`[VersionadoPresupuestoService] Clonado completado exitosamente`);
       

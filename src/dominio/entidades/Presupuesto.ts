@@ -21,7 +21,7 @@ export interface AprobacionMeta {
 }
 
 export interface EstadoAprobacion {
-  tipo: 'LICITACION_A_CONTRACTUAL' | 'CONTRACTUAL_A_META' | null;
+  tipo: 'LICITACION_A_CONTRACTUAL' | 'CONTRACTUAL_A_META' | 'NUEVA_VERSION_META' | null;
   estado: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | null;
   id_aprobacion?: string;
 }

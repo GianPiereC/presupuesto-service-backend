@@ -5,7 +5,7 @@ export interface AprobacionPresupuestoDocument extends Document {
   id_presupuesto: string;
   id_grupo_version?: string;
   id_proyecto: string;
-  tipo_aprobacion: 'LICITACION_A_CONTRACTUAL' | 'CONTRACTUAL_A_META';
+  tipo_aprobacion: 'LICITACION_A_CONTRACTUAL' | 'CONTRACTUAL_A_META' | 'NUEVA_VERSION_META';
   usuario_solicitante_id: string;
   usuario_aprobador_id?: string;
   estado: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO';
@@ -35,7 +35,7 @@ const AprobacionPresupuestoSchema = new Schema<AprobacionPresupuestoDocument>({
   id_proyecto: { type: String, required: true },
   tipo_aprobacion: {
     type: String,
-    enum: ['LICITACION_A_CONTRACTUAL', 'CONTRACTUAL_A_META'],
+    enum: ['LICITACION_A_CONTRACTUAL', 'CONTRACTUAL_A_META', 'NUEVA_VERSION_META'],
     required: true
   },
   usuario_solicitante_id: { type: String, required: true },
