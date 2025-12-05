@@ -28,8 +28,8 @@ export class ApuMongoRepository
       
       return new RecursoApu(
         r.id_recurso_apu || '',
-        r.recurso_id || '',
-        r.codigo_recurso || '',
+        r.recurso_id || undefined,
+        r.codigo_recurso || undefined,
         r.descripcion || '',
         r.unidad_medida || '',
         r.tipo_recurso || 'MATERIAL',
@@ -39,8 +39,13 @@ export class ApuMongoRepository
         cantidadConDesperdicio,
         parcial,
         orden,
-        r.cuadrilla
+        r.cuadrilla,
+        r.id_partida_subpartida,
+        r.precio_unitario_subpartida,
+        r.tiene_precio_override,
+        r.precio_override
       );
+      
     });
     
     return new Apu(
@@ -116,6 +121,18 @@ export class ApuMongoRepository
     if (recurso.cuadrilla !== undefined) {
       recursoDoc.cuadrilla = recurso.cuadrilla;
     }
+    if (recurso.id_partida_subpartida !== undefined) {
+      recursoDoc.id_partida_subpartida = recurso.id_partida_subpartida;
+    }
+    if (recurso.precio_unitario_subpartida !== undefined) {
+      recursoDoc.precio_unitario_subpartida = recurso.precio_unitario_subpartida;
+    }
+    if (recurso.tiene_precio_override !== undefined) {
+      recursoDoc.tiene_precio_override = recurso.tiene_precio_override;
+    }
+    if (recurso.precio_override !== undefined) {
+      recursoDoc.precio_override = recurso.precio_override;
+    }
 
     const updated = await this.model.findOneAndUpdate(
       { id_apu },
@@ -154,6 +171,21 @@ export class ApuMongoRepository
     }
     if (recurso.parcial !== undefined) {
       updateFields['recursos.$.parcial'] = recurso.parcial;
+    }
+    if (recurso.id_partida_subpartida !== undefined) {
+      updateFields['recursos.$.id_partida_subpartida'] = recurso.id_partida_subpartida;
+    }
+    if (recurso.precio_unitario_subpartida !== undefined) {
+      updateFields['recursos.$.precio_unitario_subpartida'] = recurso.precio_unitario_subpartida;
+    }
+    if (recurso.tiene_precio_override !== undefined) {
+      updateFields['recursos.$.tiene_precio_override'] = recurso.tiene_precio_override;
+    }
+    if (recurso.precio_override !== undefined) {
+      updateFields['recursos.$.precio_override'] = recurso.precio_override;
+    } else if (recurso.tiene_precio_override === false) {
+      // Si se desactiva el override, asegurar que precio_override se elimine o se establezca en null
+      updateFields['recursos.$.precio_override'] = null;
     }
 
     const updated = await this.model.findOneAndUpdate(

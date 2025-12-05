@@ -28,6 +28,8 @@ type Presupuesto {
   version_licitacion_aprobada: Int
   id_presupuesto_contractual: String
   version_contractual_aprobada: Int
+  id_presupuesto_meta_vigente: String
+  version_meta_vigente: Int
   es_inmutable: Boolean     # Nullable para compatibilidad con datos antiguos
   es_activo: Boolean        # Nullable para compatibilidad con datos antiguos
   estado: EstadoPresupuesto  # Nullable para compatibilidad con datos antiguos
@@ -77,6 +79,7 @@ enum TipoAprobacionPresupuesto {
   LICITACION_A_CONTRACTUAL
   CONTRACTUAL_A_META
   NUEVA_VERSION_META
+  OFICIALIZAR_META
 }
 
 enum EstadoAprobacionEstado {
@@ -200,6 +203,13 @@ extend type Mutation {
   
   # Enviar versión META en estado borrador a aprobación
   enviarVersionMetaAAprobacion(
+    id_presupuesto_meta: String!
+    usuario_solicitante_id: String!
+    comentario: String
+  ): AprobacionPresupuesto!
+  
+  # Enviar versión META aprobada a oficialización (poner en vigencia)
+  enviarVersionMetaAOficializacion(
     id_presupuesto_meta: String!
     usuario_solicitante_id: String!
     comentario: String

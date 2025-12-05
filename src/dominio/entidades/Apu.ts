@@ -24,10 +24,11 @@ export class Apu {
   /**
    * Calcula el costo directo sumando todos los costos por tipo
    * Redondea a 2 decimales para mantener consistencia con PU y parciales
+   * Incluye subpartidas en el cálculo
    */
   calcularCostoDirecto(): number {
     this.costo_materiales = Math.round(this.recursos
-      .filter(r => r.tipo_recurso === 'MATERIAL')
+      .filter(r => r.tipo_recurso === 'MATERIAL' && !r.id_partida_subpartida)
       .reduce((sum, r) => sum + r.parcial, 0) * 100) / 100;
 
     this.costo_mano_obra = Math.round(this.recursos
@@ -42,10 +43,16 @@ export class Apu {
       .filter(r => r.tipo_recurso === 'SUBCONTRATO')
       .reduce((sum, r) => sum + r.parcial, 0) * 100) / 100;
 
+    // Las subpartidas se suman al costo directo pero no a los costos por tipo
+    const costo_subpartidas = Math.round(this.recursos
+      .filter(r => r.id_partida_subpartida)
+      .reduce((sum, r) => sum + r.parcial, 0) * 100) / 100;
+
     this.costo_directo = Math.round((this.costo_materiales + 
                         this.costo_mano_obra + 
                         this.costo_equipos + 
-                        this.costo_subcontratos) * 100) / 100;
+                        this.costo_subcontratos +
+                        costo_subpartidas) * 100) / 100;
 
     return this.costo_directo;
   }

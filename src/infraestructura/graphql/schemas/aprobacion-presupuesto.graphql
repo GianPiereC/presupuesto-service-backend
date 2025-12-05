@@ -34,6 +34,7 @@ enum TipoAprobacion {
   LICITACION_A_CONTRACTUAL
   CONTRACTUAL_A_META
   NUEVA_VERSION_META
+  OFICIALIZAR_META
 }
 
 enum EstadoAprobacion {

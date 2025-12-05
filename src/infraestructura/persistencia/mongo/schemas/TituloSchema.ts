@@ -43,8 +43,8 @@ TituloSchema.index({ id_proyecto: 1 });
 TituloSchema.index({ id_titulo_padre: 1 });
 TituloSchema.index({ id_presupuesto: 1, orden: 1 });
 TituloSchema.index({ id_presupuesto: 1, id_titulo_padre: 1 });
-// Índice compuesto único: numero_item debe ser único por proyecto
-TituloSchema.index({ numero_item: 1, id_proyecto: 1 }, { unique: true });
+// Índice compuesto único: numero_item debe ser único por presupuesto (permite mismo numero_item en diferentes versiones)
+TituloSchema.index({ numero_item: 1, id_proyecto: 1, id_presupuesto: 1 }, { unique: true });
 
 TituloSchema.statics['generateNextId'] = async function(): Promise<string> {
   try {

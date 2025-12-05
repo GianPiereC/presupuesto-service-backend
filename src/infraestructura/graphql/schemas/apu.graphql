@@ -4,10 +4,11 @@
 
 type RecursoApu {
   id_recurso_apu: String!
-  recurso_id: String!
+  recurso_id: String
+  id_partida_subpartida: String
   
   # Snapshot del recurso
-  codigo_recurso: String!
+  codigo_recurso: String  # Opcional para subpartidas
   descripcion: String!
   unidad_medida: String!
   tipo_recurso: TipoRecursoApu!
@@ -16,6 +17,10 @@ type RecursoApu {
   id_precio_recurso: String  # REFERENCIA al precio compartido en precio_recurso_presupuesto
   precio: Float!  # Precio calculado dinámicamente desde precio_recurso_presupuesto (NO se guarda)
   
+  # Precio override (precio único para este recurso específico)
+  tiene_precio_override: Boolean  # Indica si este recurso usa precio único
+  precio_override: Float  # Precio único (solo se usa si tiene_precio_override = true)
+  
   # Cantidades
   cuadrilla: Float
   cantidad: Float!
@@ -23,8 +28,11 @@ type RecursoApu {
   cantidad_con_desperdicio: Float!
   
   # Cálculo
-  parcial: Float!  # Calculado: cantidad_con_desperdicio * precio
+  parcial: Float!  # Calculado: cantidad_con_desperdicio * precio (o cantidad * precio_unitario_subpartida para subpartidas)
   orden: Int!
+  
+  # Campos para subpartidas
+  precio_unitario_subpartida: Float  # Precio unitario de la subpartida (costo directo)
 }
 
 enum TipoRecursoApu {
@@ -107,18 +115,27 @@ extend type Mutation {
     id_apu: String!
     id_recurso_apu: String!
   ): Apu!
+  
+  # Crear partidas subpartidas y sus APUs
+  crearPartidasSubpartidasYAPUs(
+    subpartidas: [SubpartidaCreateInput!]!
+  ): CrearSubpartidasResponse!
 }
 
 # Input para crear/actualizar RecursoApu
 input RecursoApuInput {
-  recurso_id: String!
-  codigo_recurso: String!
+  recurso_id: String              # Opcional si es subpartida
+  id_partida_subpartida: String   # Opcional: ID de partida si es subpartida
+  codigo_recurso: String          # Opcional para subpartidas
   descripcion: String!
   unidad_medida: String!
   tipo_recurso: TipoRecursoApu!  # Puede venir como nombre del monolito ("MATERIALES", "MANO DE OBRA", etc.) o como enum
   tipo_recurso_codigo: String     # Código del tipo_costo_recurso (opcional pero recomendado: "MAT", "MO", "EQ", "SC")
-  id_precio_recurso: String       # REFERENCIA al precio compartido (opcional, se asigna automáticamente)
-  precio_usuario: Float!          # Precio que el usuario ingresa (se crea/actualiza en precio_recurso_presupuesto)
+  id_precio_recurso: String       # REFERENCIA al precio compartido (opcional, se asigna automáticamente, no aplica para subpartidas)
+  precio_usuario: Float           # Precio que el usuario ingresa (se crea/actualiza en precio_recurso_presupuesto, no aplica para subpartidas)
+  precio_unitario_subpartida: Float  # Opcional: Precio unitario de subpartida (costo directo)
+  tiene_precio_override: Boolean  # Indica si este recurso usa precio único
+  precio_override: Float  # Precio único (solo se usa si tiene_precio_override = true)
   cuadrilla: Float
   cantidad: Float!
   desperdicio_porcentaje: Float!
@@ -127,4 +144,45 @@ input RecursoApuInput {
   orden: Int!
 }
 
+# Input para crear subpartidas
+input SubpartidaCreateInput {
+  temp_id: String!
+  id_partida_padre: String!
+  id_presupuesto: String!
+  id_proyecto: String!
+  id_titulo: String!
+  nivel_partida: Int!
+  descripcion: String!
+  unidad_medida: String!
+  precio_unitario: Float!
+  metrado: Float!
+  rendimiento: Float!
+  jornada: Float!
+  recursos: [RecursoSubpartidaInput!]!
+}
+
+input RecursoSubpartidaInput {
+  recurso_id: String
+  codigo_recurso: String
+  descripcion: String!
+  unidad_medida: String!
+  tipo_recurso: String!
+  id_precio_recurso: String
+  precio_usuario: Float!
+  cuadrilla: Float
+  cantidad: Float!
+  desperdicio_porcentaje: Float!
+  cantidad_con_desperdicio: Float!
+  parcial: Float!
+  orden: Int!
+}
+
+type MapeoTempIdRealId {
+  temp_id: String!
+  id_partida_real: String!
+}
+
+type CrearSubpartidasResponse {
+  mapeo: [MapeoTempIdRealId!]!
+}
 

@@ -30,7 +30,18 @@ export class PresupuestoMongoRepository extends BaseMongoRepository<Presupuesto>
     };
 
     // Normalizar campos que pueden venir como objetos vacíos desde MongoDB
-    const estadoNormalizado = normalizarValor(docPlain.estado, undefined);
+    // Preservar null para estado (puede ser null, undefined, o un valor válido)
+    // IMPORTANTE: Si docPlain.estado es null, preservarlo como null (no convertir a undefined)
+    // Si no existe la propiedad, usar undefined
+    let estadoNormalizado: any;
+    if ('estado' in docPlain) {
+      // La propiedad existe, preservar su valor (puede ser null, string, etc.)
+      estadoNormalizado = docPlain.estado;
+    } else {
+      // La propiedad no existe en el documento
+      estadoNormalizado = undefined;
+    }
+    
     const esActivoNormalizado = normalizarValor(docPlain.es_activo, false);
     const esInmutableNormalizado = normalizarValor(docPlain.es_inmutable, false);
     const faseNormalizada = normalizarValor(docPlain.fase, undefined);
@@ -49,7 +60,7 @@ export class PresupuestoMongoRepository extends BaseMongoRepository<Presupuesto>
       ? docPlain.es_padre
       : (versionNormalizada === null || versionNormalizada === undefined);
 
-    return new Presupuesto(
+    const presupuesto = new Presupuesto(
       docPlain.id_presupuesto,
       docPlain.id_proyecto,
       docPlain.costo_directo,
@@ -77,6 +88,8 @@ export class PresupuestoMongoRepository extends BaseMongoRepository<Presupuesto>
       normalizarValor(docPlain.version_licitacion_aprobada, undefined),
       normalizarValor(docPlain.id_presupuesto_contractual, undefined),
       normalizarValor(docPlain.version_contractual_aprobada, undefined),
+      normalizarValor(docPlain.id_presupuesto_meta_vigente, undefined), // FALTABA ESTE PARÁMETRO
+      normalizarValor(docPlain.version_meta_vigente, undefined), // FALTABA ESTE PARÁMETRO
       esInmutableNormalizado,
       esActivoNormalizado,
       estadoNormalizado,
@@ -84,10 +97,14 @@ export class PresupuestoMongoRepository extends BaseMongoRepository<Presupuesto>
       aprobacionLicitacionNormalizada,
       aprobacionMetaNormalizada
     );
+    
+    return presupuesto;
   }
 
   async obtenerPorProyecto(id_proyecto: string): Promise<Presupuesto[]> {
-    const docs = await PresupuestoModel.find({ id_proyecto });
+    // Usar .lean() para obtener documentos planos y preservar null correctamente
+    // Similar a como lo hace getPresupuestosPorFaseYEstado
+    const docs = await PresupuestoModel.find({ id_proyecto }).lean();
     return docs.map(doc => this.toDomain(doc));
   }
 

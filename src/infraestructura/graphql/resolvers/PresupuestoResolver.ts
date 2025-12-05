@@ -63,12 +63,50 @@ export class PresupuestoResolver {
               const presupuestos = await this.presupuestoService.obtenerPorProyecto(id_proyecto);
               // Obtener todos los _id en batch
               const idsMap = await this.getMongoIdsBatch(presupuestos.map(p => p.id_presupuesto));
+              
               // Normalizar valores null para compatibilidad con datos antiguos
               return presupuestos.map(presupuesto => {
-                // Convertir a objeto plano primero
-                const presupuestoObj = presupuesto instanceof Presupuesto
-                  ? Object.assign({}, presupuesto)
-                  : presupuesto;
+                // Si es instancia de Presupuesto, extraer propiedades manualmente para preservar null
+                let presupuestoObj: any;
+                if (presupuesto instanceof Presupuesto) {
+                  presupuestoObj = {
+                    id_presupuesto: presupuesto.id_presupuesto,
+                    id_proyecto: presupuesto.id_proyecto,
+                    costo_directo: presupuesto.costo_directo,
+                    fecha_creacion: presupuesto.fecha_creacion,
+                    monto_igv: presupuesto.monto_igv,
+                    monto_utilidad: presupuesto.monto_utilidad,
+                    nombre_presupuesto: presupuesto.nombre_presupuesto,
+                    parcial_presupuesto: presupuesto.parcial_presupuesto,
+                    observaciones: presupuesto.observaciones,
+                    porcentaje_igv: presupuesto.porcentaje_igv,
+                    porcentaje_utilidad: presupuesto.porcentaje_utilidad,
+                    plazo: presupuesto.plazo,
+                    ppto_base: presupuesto.ppto_base,
+                    ppto_oferta: presupuesto.ppto_oferta,
+                    total_presupuesto: presupuesto.total_presupuesto,
+                    numeracion_presupuesto: presupuesto.numeracion_presupuesto,
+                    id_grupo_version: presupuesto.id_grupo_version,
+                    fase: presupuesto.fase,
+                    version: presupuesto.version,
+                    descripcion_version: presupuesto.descripcion_version,
+                    es_padre: presupuesto.es_padre,
+                    id_presupuesto_base: presupuesto.id_presupuesto_base,
+                    id_presupuesto_licitacion: presupuesto.id_presupuesto_licitacion,
+                    version_licitacion_aprobada: presupuesto.version_licitacion_aprobada,
+                    id_presupuesto_contractual: presupuesto.id_presupuesto_contractual,
+                    version_contractual_aprobada: presupuesto.version_contractual_aprobada,
+                    es_inmutable: presupuesto.es_inmutable,
+                    es_activo: presupuesto.es_activo,
+                    estado: presupuesto.estado, // Preservar null explícitamente
+                    estado_aprobacion: presupuesto.estado_aprobacion,
+                    aprobacion_licitacion: presupuesto.aprobacion_licitacion,
+                    aprobacion_meta: presupuesto.aprobacion_meta,
+                  };
+                } else {
+                  presupuestoObj = presupuesto;
+                }
+                
                 return this.normalizarPresupuestoParaGraphQL({
                   ...presupuestoObj,
                   _id: idsMap.get(presupuesto.id_presupuesto) || null
@@ -435,6 +473,39 @@ export class PresupuestoResolver {
             args
           );
         },
+        enviarVersionMetaAOficializacion: async (_: any, args: any) => {
+          return await ErrorHandler.handleError(
+            async () => {
+              const aprobacion = await this.versionadoPresupuestoService.enviarVersionMetaAOficializacion(
+                args.id_presupuesto_meta,
+                args.usuario_solicitante_id,
+                args.comentario
+              );
+              
+              // Retornar la aprobación
+              return {
+                id_aprobacion: aprobacion.id_aprobacion,
+                id_presupuesto: aprobacion.id_presupuesto,
+                id_grupo_version: aprobacion.id_grupo_version,
+                id_proyecto: aprobacion.id_proyecto,
+                tipo_aprobacion: aprobacion.tipo_aprobacion,
+                usuario_solicitante_id: aprobacion.usuario_solicitante_id,
+                usuario_aprobador_id: aprobacion.usuario_aprobador_id,
+                estado: aprobacion.estado,
+                fecha_solicitud: aprobacion.fecha_solicitud,
+                fecha_aprobacion: aprobacion.fecha_aprobacion,
+                fecha_rechazo: aprobacion.fecha_rechazo,
+                comentario_solicitud: aprobacion.comentario_solicitud,
+                comentario_aprobacion: aprobacion.comentario_aprobacion,
+                comentario_rechazo: aprobacion.comentario_rechazo,
+                version_presupuesto: aprobacion.version_presupuesto,
+                monto_presupuesto: aprobacion.monto_presupuesto
+              };
+            },
+            'enviarVersionMetaAOficializacion',
+            args
+          );
+        },
         crearPresupuestoConVersion: async (_: any, args: any) => {
           return await ErrorHandler.handleError(
             async () => {
@@ -625,29 +696,54 @@ export class PresupuestoResolver {
     const versionVal = presupuestoPlain.version;
     const esPadreVal = presupuestoPlain.es_padre;
 
-    // Construir objeto normalizado
+    // Normalizar valores específicos antes de construir el resultado
+    // Validar que es_activo sea realmente un boolean (no un objeto u otro tipo)
+    const esActivoNormalizado = (typeof esActivoVal === 'boolean')
+      ? esActivoVal
+      : (esActivoVal === true || esActivoVal === 'true' || esActivoVal === 1)
+        ? true
+        : (esActivoVal === false || esActivoVal === 'false' || esActivoVal === 0 || esActivoVal === null || esActivoVal === undefined)
+          ? false
+          : false; // Default a false si es un objeto u otro tipo
+
+    // Validar que es_inmutable sea realmente un boolean (no un string u otro tipo)
+    const esInmutableNormalizado = (typeof esInmutableVal === 'boolean')
+      ? esInmutableVal
+      : (esInmutableVal === true || esInmutableVal === 'true' || esInmutableVal === 1)
+        ? true
+        : (esInmutableVal === false || esInmutableVal === 'false' || esInmutableVal === 0 || esInmutableVal === null || esInmutableVal === undefined)
+          ? false
+          : false; // Default a false si es un string u otro tipo
+
+    // Normalizar estado: debe ser string o null (preservar null explícitamente)
+    const estadoNormalizado = (estadoVal === null)
+      ? null
+      : (estadoVal && typeof estadoVal === 'string')
+        ? estadoVal
+        : null;
+
+    // Normalizar estado_aprobacion: debe ser objeto válido o null
+    const estadoAprobacionNormalizado = (estadoAprobacionVal && typeof estadoAprobacionVal === 'object' && !Array.isArray(estadoAprobacionVal) && !esObjetoVacio(estadoAprobacionVal))
+      ? estadoAprobacionVal
+      : null;
+
+    // Construir objeto normalizado - IMPORTANTE: remover campos problemáticos antes del spread
+    const { estado: _, estado_aprobacion: __, es_activo: ___, es_inmutable: ____, ...presupuestoSinCamposProblematicos } = presupuestoPlain;
+
     const resultado: any = {
-      ...presupuestoPlain,
+      ...presupuestoSinCamposProblematicos,
       // Normalizar estado: si es null, undefined u objeto vacío, usar null
-      estado: estadoVal && typeof estadoVal === 'string' 
-        ? estadoVal 
-        : normalizarValor(estadoVal, null),
+      estado: estadoNormalizado,
       // Normalizar estado_aprobacion: si es null, undefined u objeto vacío, usar null
-      estado_aprobacion: estadoAprobacionVal && typeof estadoAprobacionVal === 'object' && !esObjetoVacio(estadoAprobacionVal)
-        ? estadoAprobacionVal
-        : normalizarValor(estadoAprobacionVal, null),
-      // Normalizar es_activo: si es null, undefined u objeto vacío, usar false por defecto
-      es_activo: esActivoVal === true || esActivoVal === false
-        ? esActivoVal
-        : normalizarValor(esActivoVal, false),
+      estado_aprobacion: estadoAprobacionNormalizado,
+      // Normalizar es_activo: validar que sea boolean
+      es_activo: esActivoNormalizado,
       // Normalizar es_padre: calcular si no existe o es objeto vacío
       es_padre: esPadreVal === true || esPadreVal === false
         ? esPadreVal
         : (versionVal === null || versionVal === undefined),
-      // Normalizar es_inmutable: si es null, undefined u objeto vacío, usar false
-      es_inmutable: esInmutableVal === true || esInmutableVal === false
-        ? esInmutableVal
-        : normalizarValor(esInmutableVal, false),
+      // Normalizar es_inmutable: validar que sea boolean
+      es_inmutable: esInmutableNormalizado,
       // Normalizar fase: si es null, undefined u objeto vacío, mantener null
       fase: faseVal && typeof faseVal === 'string'
         ? faseVal

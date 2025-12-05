@@ -41,7 +41,6 @@ export interface PartidaCreateInput {
   id_partida_padre?: string | null;
   nivel_partida: number;
   numero_item: string;
-  codigo_partida: string;
   descripcion: string;
   unidad_medida: string;
   metrado: number;
@@ -58,7 +57,6 @@ export interface PartidaUpdateInput {
   id_partida_padre?: string | null;
   nivel_partida?: number;
   numero_item?: string;
-  codigo_partida?: string;
   descripcion?: string;
   unidad_medida?: string;
   metrado?: number;
@@ -127,7 +125,6 @@ export class EstructuraBatchService {
       docPlain.id_partida_padre || null,
       docPlain.nivel_partida,
       docPlain.numero_item,
-      docPlain.codigo_partida,
       docPlain.descripcion,
       docPlain.unidad_medida,
       docPlain.metrado || 0,
@@ -221,14 +218,14 @@ export class EstructuraBatchService {
             };
 
             // Validar unicidad de numero_item por proyecto
-            if (tituloData.numero_item && tituloData.id_proyecto) {
+            if (tituloData.numero_item && tituloData.id_presupuesto) {
               const existente = await TituloModel.findOne({
                 numero_item: tituloData.numero_item,
-                id_proyecto: tituloData.id_proyecto
+                id_presupuesto: tituloData.id_presupuesto
               }).session(session);
               if (existente) {
                 throw new ValidationException(
-                  `Ya existe un título con el número de item "${tituloData.numero_item}" en este proyecto`,
+                  `Ya existe un título con el número de item "${tituloData.numero_item}" en este presupuesto`,
                   'numero_item'
                 );
               }
@@ -270,7 +267,6 @@ export class EstructuraBatchService {
           id_partida_padre: partidaInput.id_partida_padre || null,
           nivel_partida: partidaInput.nivel_partida,
           numero_item: partidaInput.numero_item,
-          codigo_partida: partidaInput.codigo_partida,
           descripcion: partidaInput.descripcion,
           unidad_medida: partidaInput.unidad_medida,
           metrado: partidaInput.metrado,
@@ -279,20 +275,6 @@ export class EstructuraBatchService {
           orden: partidaInput.orden,
           estado: partidaInput.estado || 'Activa',
         };
-
-        // Validar unicidad de codigo_partida por proyecto
-        if (partidaData.codigo_partida && partidaData.id_proyecto) {
-          const existente = await PartidaModel.findOne({
-            codigo_partida: partidaData.codigo_partida,
-            id_proyecto: partidaData.id_proyecto
-          }).session(session);
-          if (existente) {
-            throw new ValidationException(
-              `Ya existe una partida con el código "${partidaData.codigo_partida}" en este proyecto`,
-              'codigo_partida'
-            );
-          }
-        }
 
         // Crear usando el modelo directamente con la sesión
         const nuevaPartidaDoc = await PartidaModel.create([partidaData], { session });
@@ -371,28 +353,8 @@ export class EstructuraBatchService {
         if (partidaInput.unidad_medida !== undefined) cambios.unidad_medida = partidaInput.unidad_medida;
         if (partidaInput.nivel_partida !== undefined) cambios.nivel_partida = partidaInput.nivel_partida;
         if (partidaInput.numero_item !== undefined) cambios.numero_item = partidaInput.numero_item;
-        if (partidaInput.codigo_partida !== undefined) cambios.codigo_partida = partidaInput.codigo_partida;
         if (partidaInput.estado !== undefined) cambios.estado = partidaInput.estado;
         if (partidaInput.parcial_partida !== undefined) cambios.parcial_partida = partidaInput.parcial_partida;
-
-        // Validar unicidad de codigo_partida por proyecto si se está actualizando
-        if (partidaInput.codigo_partida !== undefined) {
-          const partidaActual = await PartidaModel.findOne({ id_partida: partidaInput.id_partida }).session(session);
-          if (partidaActual) {
-            const id_proyecto = partidaActual.id_proyecto;
-            const existente = await PartidaModel.findOne({
-              codigo_partida: partidaInput.codigo_partida,
-              id_proyecto: id_proyecto,
-              id_partida: { $ne: partidaInput.id_partida }
-            }).session(session);
-            if (existente) {
-              throw new ValidationException(
-                `Ya existe otra partida con el código "${partidaInput.codigo_partida}" en este proyecto`,
-                'codigo_partida'
-              );
-            }
-          }
-        }
 
         if (Object.keys(cambios).length > 0) {
           // Actualizar usando el modelo directamente con la sesión
@@ -659,7 +621,6 @@ export class EstructuraBatchService {
           id_partida_padre: partidaInput.id_partida_padre || null,
           nivel_partida: partidaInput.nivel_partida,
           numero_item: partidaInput.numero_item,
-          codigo_partida: partidaInput.codigo_partida,
           descripcion: partidaInput.descripcion,
           unidad_medida: partidaInput.unidad_medida,
           metrado: partidaInput.metrado,
@@ -760,7 +721,6 @@ export class EstructuraBatchService {
         if (partidaInput.unidad_medida !== undefined) cambios.unidad_medida = partidaInput.unidad_medida;
         if (partidaInput.nivel_partida !== undefined) cambios.nivel_partida = partidaInput.nivel_partida;
         if (partidaInput.numero_item !== undefined) cambios.numero_item = partidaInput.numero_item;
-        if (partidaInput.codigo_partida !== undefined) cambios.codigo_partida = partidaInput.codigo_partida;
         if (partidaInput.estado !== undefined) cambios.estado = partidaInput.estado;
         if (partidaInput.parcial_partida !== undefined) cambios.parcial_partida = partidaInput.parcial_partida;
 

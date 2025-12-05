@@ -3,8 +3,8 @@ export type TipoRecursoApu = 'MATERIAL' | 'MANO_OBRA' | 'EQUIPO' | 'SUBCONTRATO'
 export class RecursoApu {
   constructor(
     public readonly id_recurso_apu: string,
-    public readonly recurso_id: string,
-    public codigo_recurso: string,
+    public readonly recurso_id: string | undefined,  // Opcional si es subpartida
+    public codigo_recurso: string | undefined,  // Opcional si es subpartida
     public descripcion: string,
     public unidad_medida: string,
     public tipo_recurso: TipoRecursoApu,
@@ -14,7 +14,11 @@ export class RecursoApu {
     public cantidad_con_desperdicio: number,
     public parcial: number,
     public orden: number,
-    public cuadrilla?: number
+    public cuadrilla?: number,
+    public id_partida_subpartida?: string,  // Opcional: ID de partida si es subpartida
+    public precio_unitario_subpartida?: number,  // Opcional: Precio unitario de subpartida
+    public tiene_precio_override?: boolean,  // Indica si este recurso usa precio único
+    public precio_override?: number  // Precio único (solo se usa si tiene_precio_override = true)
   ) {}
 
   // Función helper para truncar a 4 decimales (para cuadrilla y cantidad)

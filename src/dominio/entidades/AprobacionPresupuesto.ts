@@ -1,7 +1,7 @@
 /**
  * Entidad de dominio: AprobacionPresupuesto
  */
-export type TipoAprobacion = 'LICITACION_A_CONTRACTUAL' | 'CONTRACTUAL_A_META' | 'NUEVA_VERSION_META';
+export type TipoAprobacion = 'LICITACION_A_CONTRACTUAL' | 'CONTRACTUAL_A_META' | 'NUEVA_VERSION_META' | 'OFICIALIZAR_META';
 export type EstadoAprobacion = 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO';
 
 export class AprobacionPresupuesto {

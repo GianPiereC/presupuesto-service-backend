@@ -8,5 +8,6 @@ export interface ITituloRepository extends IBaseRepository<Titulo> {
   obtenerHijos(id_titulo_padre: string): Promise<Titulo[]>;
   obtenerPorPadre(id_titulo_padre: string | null): Promise<Titulo[]>;
   obtenerPorNumeroItemYProyecto(numero_item: string, id_proyecto: string, excludeId?: string): Promise<Titulo | null>;
+  obtenerPorNumeroItemYPresupuesto(numero_item: string, id_presupuesto: string, excludeId?: string): Promise<Titulo | null>;
 }
 

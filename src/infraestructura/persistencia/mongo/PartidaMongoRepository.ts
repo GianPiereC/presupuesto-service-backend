@@ -20,7 +20,6 @@ export class PartidaMongoRepository extends BaseMongoRepository<Partida> impleme
       docPlain.id_partida_padre || null,
       docPlain.nivel_partida,
       docPlain.numero_item,
-      docPlain.codigo_partida,
       docPlain.descripcion,
       docPlain.unidad_medida,
       docPlain.metrado || 0,
@@ -80,15 +79,6 @@ export class PartidaMongoRepository extends BaseMongoRepository<Partida> impleme
   override async delete(id: string): Promise<boolean> {
     const deleted = await this.model.findOneAndDelete({ id_partida: id });
     return !!deleted;
-  }
-
-  async obtenerPorCodigoYProyecto(codigo_partida: string, id_proyecto: string, excludeId?: string): Promise<Partida | null> {
-    const query: any = { codigo_partida, id_proyecto };
-    if (excludeId) {
-      query.id_partida = { $ne: excludeId };
-    }
-    const doc = await this.model.findOne(query);
-    return doc ? this.toDomain(doc) : null;
   }
 }
 

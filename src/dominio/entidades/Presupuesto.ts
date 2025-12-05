@@ -21,7 +21,7 @@ export interface AprobacionMeta {
 }
 
 export interface EstadoAprobacion {
-  tipo: 'LICITACION_A_CONTRACTUAL' | 'CONTRACTUAL_A_META' | 'NUEVA_VERSION_META' | null;
+  tipo: 'LICITACION_A_CONTRACTUAL' | 'CONTRACTUAL_A_META' | 'NUEVA_VERSION_META' | 'OFICIALIZAR_META' | null;
   estado: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | null;
   id_aprobacion?: string;
 }
@@ -55,6 +55,8 @@ export class Presupuesto {
     public version_licitacion_aprobada?: number,
     public id_presupuesto_contractual?: string,
     public version_contractual_aprobada?: number,
+    public id_presupuesto_meta_vigente?: string,
+    public version_meta_vigente?: number,
     public es_inmutable?: boolean,
     public es_activo?: boolean,
     public estado?: EstadoPresupuesto,

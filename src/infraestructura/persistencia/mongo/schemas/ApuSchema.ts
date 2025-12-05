@@ -7,17 +7,24 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 export interface RecursoApuDocument {
   id_recurso_apu: string;
   
-  // Referencia al recurso del monolito
-  recurso_id: string;
+  // Referencia al recurso del monolito (opcional si es subpartida)
+  recurso_id?: string;
+  
+  // Referencia a partida si es subpartida
+  id_partida_subpartida?: string;
   
   // Snapshot del recurso (desnormalizado)
-  codigo_recurso: string;
+  codigo_recurso?: string;  // Opcional si es subpartida
   descripcion: string;
   unidad_medida: string;
   tipo_recurso: 'MATERIAL' | 'MANO_OBRA' | 'EQUIPO' | 'SUBCONTRATO';
   
   // Sistema de precios simplificado: SOLO referencia
   id_precio_recurso: string | null;  // REFERENCIA al precio compartido en precio_recurso_presupuesto
+  
+  // Precio override (precio único para este recurso específico)
+  tiene_precio_override?: boolean;  // Indica si este recurso usa precio único
+  precio_override?: number;  // Precio único (solo se usa si tiene_precio_override = true)
   
   // Cantidades
   cuadrilla?: number;                // Solo para MANO_OBRA
@@ -26,8 +33,11 @@ export interface RecursoApuDocument {
   cantidad_con_desperdicio: number;  // Calculado: cantidad × (1 + desperdicio%)
   
   // Cálculo
-  parcial: number;                   // Calculado: cantidad_con_desperdicio × precio
+  parcial: number;                   // Calculado: cantidad_con_desperdicio × precio (o cantidad × precio_unitario_subpartida para subpartidas)
   orden: number;
+  
+  // Campos para subpartidas
+  precio_unitario_subpartida?: number;  // Precio unitario de la subpartida (costo directo)
 }
 
 /**
@@ -62,10 +72,11 @@ interface ApuModel extends Model<ApuDocument> {
 // Schema para RECURSO_APU (documento embebido)
 const RecursoApuSchema = new Schema<RecursoApuDocument>({
   id_recurso_apu: { type: String, required: true },
-  recurso_id: { type: String, required: true },
+  recurso_id: { type: String, required: false },  // Opcional si es subpartida
+  id_partida_subpartida: { type: String, required: false },  // Opcional: ID de partida si es subpartida
   
   // Snapshot
-  codigo_recurso: { type: String, required: true },
+  codigo_recurso: { type: String, required: false },  // Opcional si es subpartida
   descripcion: { type: String, required: true },
   unidad_medida: { type: String, required: true },
   tipo_recurso: {
@@ -77,6 +88,10 @@ const RecursoApuSchema = new Schema<RecursoApuDocument>({
   // Precio - SOLO referencia al precio compartido
   id_precio_recurso: { type: String, default: null },
   
+  // Precio override
+  tiene_precio_override: { type: Boolean, required: false },
+  precio_override: { type: Number, required: false },
+  
   // Cantidades
   cuadrilla: { type: Number },
   cantidad: { type: Number, required: true },
@@ -85,7 +100,10 @@ const RecursoApuSchema = new Schema<RecursoApuDocument>({
   
   // Cálculo
   parcial: { type: Number, required: true },
-  orden: { type: Number, required: true }
+  orden: { type: Number, required: true },
+  
+  // Campos para subpartidas
+  precio_unitario_subpartida: { type: Number, required: false }  // Precio unitario de la subpartida (costo directo)
 }, {
   _id: false // No crear _id para documentos embebidos
 });

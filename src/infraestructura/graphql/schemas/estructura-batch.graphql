@@ -44,7 +44,6 @@ input PartidaCreateInput {
   id_partida_padre: String
   nivel_partida: Int!
   numero_item: String!
-  codigo_partida: String!
   descripcion: String!
   unidad_medida: String!
   metrado: Float!
@@ -61,7 +60,6 @@ input PartidaUpdateInput {
   id_partida_padre: String
   nivel_partida: Int
   numero_item: String
-  codigo_partida: String
   descripcion: String
   unidad_medida: String
   metrado: Float

@@ -55,6 +55,113 @@ export class VersionadoPresupuestoService {
   ) {}
 
   /**
+   * Ordena jerárquicamente títulos para mantener la estructura correcta al clonar.
+   * Garantiza que los padres se procesen antes que sus hijos, y dentro del mismo nivel
+   * se respete el orden entre hermanos.
+   * 
+   * @param titulos Array de títulos a ordenar
+   * @returns Array de títulos ordenados jerárquicamente (padres antes de hijos)
+   */
+  private ordenarTitulosJerarquicamente(titulos: Titulo[]): Titulo[] {
+    // Crear mapa de títulos por padre
+    const titulosPorPadre = new Map<string | null, Titulo[]>();
+    
+    titulos.forEach(titulo => {
+      const padre = titulo.id_titulo_padre || null;
+      if (!titulosPorPadre.has(padre)) {
+        titulosPorPadre.set(padre, []);
+      }
+      titulosPorPadre.get(padre)!.push(titulo);
+    });
+    
+    // Ordenar cada grupo por orden
+    titulosPorPadre.forEach((grupo) => {
+      grupo.sort((a, b) => a.orden - b.orden);
+    });
+    
+    // Función recursiva para construir el orden jerárquico
+    const construirOrden = (idPadre: string | null): Titulo[] => {
+      const resultado: Titulo[] = [];
+      const titulosHijos = titulosPorPadre.get(idPadre) || [];
+      
+      for (const titulo of titulosHijos) {
+        resultado.push(titulo);
+        // Procesar recursivamente los hijos
+        resultado.push(...construirOrden(titulo.id_titulo));
+      }
+      
+      return resultado;
+    };
+    
+    return construirOrden(null);
+  }
+
+  /**
+   * Ordena partidas respetando la jerarquía y el orden relativo dentro de cada título.
+   * Primero ordena las partidas principales (sin id_partida_padre) dentro de cada título,
+   * luego ordena las subpartidas después de sus partidas padre.
+   * Si se proporcionan títulos ordenados, respeta ese orden para las partidas.
+   * 
+   * @param partidas Array de partidas a ordenar
+   * @param titulosOrdenados Opcional: Array de títulos ya ordenados jerárquicamente para respetar su orden
+   * @returns Array de partidas ordenadas respetando jerarquía y orden dentro de cada título
+   */
+  private ordenarPartidasJerarquicamente(partidas: Partida[], titulosOrdenados?: Titulo[]): Partida[] {
+    // Separar partidas principales y subpartidas
+    const partidasPrincipales = partidas.filter(p => !p.id_partida_padre);
+    const subpartidas = partidas.filter(p => p.id_partida_padre !== null);
+    
+    // Crear mapa de partidas por título
+    const partidasPorTitulo = new Map<string, Partida[]>();
+    
+    partidasPrincipales.forEach(partida => {
+      if (!partidasPorTitulo.has(partida.id_titulo)) {
+        partidasPorTitulo.set(partida.id_titulo, []);
+      }
+      partidasPorTitulo.get(partida.id_titulo)!.push(partida);
+    });
+    
+    // Ordenar partidas dentro de cada título por orden
+    partidasPorTitulo.forEach((grupo) => {
+      grupo.sort((a, b) => a.orden - b.orden);
+    });
+    
+    // Determinar el orden de los títulos
+    let titulosIds: string[];
+    if (titulosOrdenados && titulosOrdenados.length > 0) {
+      // Usar el orden jerárquico de los títulos proporcionados
+      titulosIds = titulosOrdenados
+        .filter(t => partidasPorTitulo.has(t.id_titulo))
+        .map(t => t.id_titulo);
+    } else {
+      // Si no se proporcionan títulos ordenados, usar orden simple por ID
+      titulosIds = Array.from(partidasPorTitulo.keys());
+    }
+    
+    // Ordenar las partidas principales según el orden de sus títulos
+    // y dentro de cada título por su orden
+    const partidasOrdenadas: Partida[] = [];
+    
+    for (const idTitulo of titulosIds) {
+      const partidasDelTitulo = partidasPorTitulo.get(idTitulo) || [];
+      partidasDelTitulo.sort((a, b) => a.orden - b.orden);
+      
+      for (const partida of partidasDelTitulo) {
+        partidasOrdenadas.push(partida);
+        
+        // Agregar subpartidas de esta partida inmediatamente después
+        const subpartidasDeEsta = subpartidas
+          .filter(sp => sp.id_partida_padre === partida.id_partida)
+          .sort((a, b) => a.orden - b.orden);
+        
+        partidasOrdenadas.push(...subpartidasDeEsta);
+      }
+    }
+    
+    return partidasOrdenadas;
+  }
+
+  /**
    * Crear presupuesto padre (sin detalles)
    * Siempre crea un nuevo grupo de versiones
    */
@@ -480,8 +587,8 @@ export class VersionadoPresupuestoService {
     const titulosBase = await this.tituloRepository.obtenerPorPresupuesto(id_presupuesto_base);
     const mapaTitulosViejosANuevos = new Map<string, string>(); // id_titulo_viejo -> id_titulo_nuevo
 
-    // Clonar títulos en orden (para mantener relaciones padre-hijo)
-    const titulosOrdenados = titulosBase.sort((a, b) => a.orden - b.orden);
+    // Clonar títulos en orden jerárquico (para mantener relaciones padre-hijo y orden correcto)
+    const titulosOrdenados = this.ordenarTitulosJerarquicamente(titulosBase);
     
     for (const tituloBase of titulosOrdenados) {
       const id_titulo_nuevo = await TituloModel.generateNextId();
@@ -511,8 +618,9 @@ export class VersionadoPresupuestoService {
 
     console.log(`[VersionadoPresupuestoService] Clonando ${partidasBase.length} partidas del presupuesto ${id_presupuesto_base}`);
 
-    // Clonar partidas en orden
-    const partidasOrdenadas = partidasBase.sort((a, b) => a.orden - b.orden);
+    // Clonar partidas en orden jerárquico (respeta orden dentro de cada título y subpartidas)
+    // Pasar títulos ordenados para respetar el orden jerárquico de los títulos
+    const partidasOrdenadas = this.ordenarPartidasJerarquicamente(partidasBase, titulosOrdenados);
 
     for (const partidaBase of partidasOrdenadas) {
       const id_partida_nueva = await PartidaModel.generateNextId();
@@ -533,7 +641,6 @@ export class VersionadoPresupuestoService {
         id_partida_padre: id_partida_padre_nueva,
         nivel_partida: partidaBase.nivel_partida,
         numero_item: partidaBase.numero_item,
-        codigo_partida: partidaBase.codigo_partida,
         descripcion: partidaBase.descripcion,
         unidad_medida: partidaBase.unidad_medida,
         metrado: partidaBase.metrado,
@@ -687,11 +794,16 @@ export class VersionadoPresupuestoService {
       // Marcar esta partida como procesada
       partidasProcesadas.add(id_partida_nueva);
 
-      // Clonar recursos del APU generando nuevos IDs y actualizando referencias a precios
+      // Clonar recursos del APU generando nuevos IDs y actualizando referencias a precios y subpartidas
       const recursosClonados = apuBase.recursos.map((recurso) => {
         // Actualizar id_precio_recurso para que apunte al precio clonado del nuevo presupuesto
         const id_precio_recurso_nuevo = recurso.id_precio_recurso
           ? mapaPreciosViejosANuevos.get(recurso.id_precio_recurso) || null
+          : null;
+
+        // Actualizar id_partida_subpartida para que apunte a la partida subpartida clonada
+        const id_partida_subpartida_nuevo = recurso.id_partida_subpartida
+          ? mapaPartidasViejasANuevas.get(recurso.id_partida_subpartida) || null
           : null;
 
         return {
@@ -708,6 +820,12 @@ export class VersionadoPresupuestoService {
           parcial: recurso.parcial,
           orden: recurso.orden,
           cuadrilla: recurso.cuadrilla,
+          // Campos de precio override
+          tiene_precio_override: recurso.tiene_precio_override,
+          precio_override: recurso.precio_override,
+          // Campos de subpartida (actualizar ID a la partida clonada)
+          id_partida_subpartida: id_partida_subpartida_nuevo,
+          precio_unitario_subpartida: recurso.precio_unitario_subpartida,
         };
       });
 
@@ -893,8 +1011,26 @@ export class VersionadoPresupuestoService {
       throw new Error('Solo se pueden enviar a aprobación presupuestos en fase META');
     }
     
-    if (versionMeta.estado !== 'borrador') {
-      throw new Error('Solo se pueden enviar a aprobación versiones en estado borrador');
+    // Verificar el estado directamente desde la base de datos para asegurar que obtenemos el estado real
+    const versionMetaDesdeBD = await PresupuestoModel.findOne({
+      id_presupuesto: id_presupuesto_meta
+    }).lean();
+
+    if (!versionMetaDesdeBD) {
+      throw new Error('No se encontró la versión en la base de datos');
+    }
+
+    const estadoActual = versionMetaDesdeBD.estado;
+    
+    // Solo permitir enviar a aprobación versiones en estado borrador para NUEVA_VERSION_META
+    // Las versiones rechazadas NO se pueden re-enviar (deben crear una nueva versión)
+    // Las versiones aprobadas se oficializan con OFICIALIZAR_META (flujo diferente)
+    if (estadoActual !== 'borrador') {
+      const estadoStr = estadoActual || 'sin estado (null)';
+      if (estadoActual === 'rechazado') {
+        throw new Error('Las versiones rechazadas no se pueden re-enviar a aprobación. Debe crear una nueva versión desde una versión aprobada.');
+      }
+      throw new Error(`Solo se pueden enviar a aprobación (NUEVA_VERSION_META) versiones en estado borrador. El estado actual es: "${estadoStr}". Para versiones aprobadas, use el flujo de oficialización (OFICIALIZAR_META).`);
     }
     
     if (!versionMeta.id_grupo_version) {
@@ -955,6 +1091,136 @@ export class VersionadoPresupuestoService {
     } as Partial<Presupuesto>);
 
     console.log(`[VersionadoPresupuestoService] Aprobación creada: ${id_aprobacion} para versión META ${id_presupuesto_meta}`);
+    
+    return nuevaAprobacion;
+  }
+
+  /**
+   * Enviar una versión META aprobada a oficialización (poner en vigencia)
+   * Solo la versión más alta aprobada puede ser oficializada
+   * Crea una aprobación de tipo OFICIALIZAR_META y cambia el estado a en_revision
+   */
+  async enviarVersionMetaAOficializacion(
+    id_presupuesto_meta: string,
+    usuario_solicitante_id: string,
+    comentario?: string
+  ): Promise<AprobacionPresupuesto> {
+    // 1. Obtener la versión META que se quiere oficializar
+    const versionMeta = await this.presupuestoRepository.obtenerPorIdPresupuesto(id_presupuesto_meta);
+    
+    if (!versionMeta) {
+      throw new Error('Presupuesto no encontrado');
+    }
+    
+    if (versionMeta.es_padre) {
+      throw new Error('No se puede oficializar un presupuesto padre. Debe seleccionar una versión.');
+    }
+    
+    if (versionMeta.fase !== 'META') {
+      throw new Error('Solo se pueden oficializar presupuestos en fase META');
+    }
+    
+    if (!versionMeta.id_grupo_version) {
+      throw new Error('La versión no tiene un grupo de versión asignado');
+    }
+
+    if (!versionMeta.version) {
+      throw new Error('La versión no tiene número de versión asignado');
+    }
+
+    // 2. Verificar el estado directamente desde la base de datos para asegurar que obtenemos el estado real
+    const versionMetaDesdeBD = await PresupuestoModel.findOne({
+      id_presupuesto: id_presupuesto_meta
+    }).lean();
+
+    if (!versionMetaDesdeBD) {
+      throw new Error('No se encontró la versión en la base de datos');
+    }
+
+    const estadoActual = versionMetaDesdeBD.estado;
+    
+    // Validar que el estado sea 'aprobado'
+    if (estadoActual !== 'aprobado') {
+      const estadoStr = estadoActual || 'sin estado (null)';
+      throw new Error(`Solo se pueden oficializar versiones en estado aprobado. El estado actual es: "${estadoStr}"`);
+    }
+
+    // 3. Validar que sea la versión más alta aprobada
+    const todasVersionesAprobadas = await PresupuestoModel.find({
+      id_grupo_version: versionMeta.id_grupo_version,
+      fase: 'META',
+      estado: { $in: ['aprobado', 'vigente'] }
+    })
+      .sort({ version: -1 })
+      .lean();
+
+    if (todasVersionesAprobadas.length === 0) {
+      throw new Error('No se encontraron versiones aprobadas');
+    }
+
+    const versionMasAlta = todasVersionesAprobadas[0];
+    if (!versionMasAlta.version || versionMasAlta.version !== versionMeta.version) {
+      throw new Error(`Solo se puede oficializar la versión más alta aprobada. La versión más alta es V${versionMasAlta.version}, pero se intentó oficializar V${versionMeta.version}`);
+    }
+
+    if (versionMasAlta.estado === 'vigente') {
+      throw new Error('Ya existe una versión vigente. No se puede oficializar otra versión.');
+    }
+
+    // 3. Obtener el padre
+    const presupuestosPadre = await PresupuestoModel.find({
+      id_grupo_version: versionMeta.id_grupo_version,
+      es_padre: true
+    }).lean();
+    
+    if (!presupuestosPadre || presupuestosPadre.length === 0 || !presupuestosPadre[0]) {
+      throw new Error('No se encontró el presupuesto padre');
+    }
+    
+    const presupuestoPadre = presupuestosPadre[0];
+    if (!presupuestoPadre.id_presupuesto) {
+      throw new Error('El presupuesto padre no tiene id_presupuesto');
+    }
+
+    // 4. Verificar si ya existe una aprobación pendiente para oficializar esta versión
+    const aprobacionesExistentes = await this.aprobacionRepository.obtenerPorPresupuesto(presupuestoPadre.id_presupuesto);
+    const aprobacionPendiente = aprobacionesExistentes.find(
+      a => a.estado === 'PENDIENTE' && 
+           a.tipo_aprobacion === 'OFICIALIZAR_META' &&
+           a.version_presupuesto === versionMeta.version
+    );
+    
+    if (aprobacionPendiente) {
+      throw new Error('Ya existe una solicitud pendiente para oficializar esta versión');
+    }
+
+    // 5. Crear registro de aprobación
+    const id_aprobacion = await AprobacionPresupuestoModel.generateNextId();
+    const nuevaAprobacion = await this.aprobacionRepository.crear({
+      id_aprobacion,
+      id_presupuesto: presupuestoPadre.id_presupuesto,
+      id_grupo_version: versionMeta.id_grupo_version,
+      id_proyecto: versionMeta.id_proyecto,
+      tipo_aprobacion: 'OFICIALIZAR_META',
+      usuario_solicitante_id,
+      estado: 'PENDIENTE',
+      fecha_solicitud: new Date().toISOString(),
+      comentario_solicitud: comentario,
+      version_presupuesto: versionMeta.version,
+      monto_presupuesto: versionMeta.total_presupuesto
+    });
+
+    // 6. Actualizar el estado de la versión a en_revision
+    await this.presupuestoRepository.update(id_presupuesto_meta, {
+      estado: 'en_revision',
+      estado_aprobacion: {
+        tipo: 'OFICIALIZAR_META',
+        estado: 'PENDIENTE',
+        id_aprobacion: id_aprobacion
+      }
+    } as Partial<Presupuesto>);
+
+    console.log(`[VersionadoPresupuestoService] Aprobación de oficialización creada: ${id_aprobacion} para versión META ${id_presupuesto_meta} (V${versionMeta.version})`);
     
     return nuevaAprobacion;
   }
@@ -1054,7 +1320,9 @@ export class VersionadoPresupuestoService {
       const mapaTitulosViejosANuevos = new Map<string, string>();
       
       console.log(`[VersionadoPresupuestoService] Clonando ${titulosBase.length} títulos...`);
-      for (const tituloBase of titulosBase) {
+      // Ordenar títulos jerárquicamente antes de clonar
+      const titulosOrdenadosLicitacion = this.ordenarTitulosJerarquicamente(titulosBase);
+      for (const tituloBase of titulosOrdenadosLicitacion) {
         const id_titulo_nuevo = await TituloModel.generateNextId();
         const id_titulo_padre_nuevo = tituloBase.id_titulo_padre 
           ? mapaTitulosViejosANuevos.get(tituloBase.id_titulo_padre) || null
@@ -1076,7 +1344,9 @@ export class VersionadoPresupuestoService {
       const mapaPartidasViejasANuevas = new Map<string, string>();
       
       console.log(`[VersionadoPresupuestoService] Clonando ${partidasBase.length} partidas...`);
-      for (const partidaBase of partidasBase) {
+      // Ordenar partidas jerárquicamente antes de clonar (pasar títulos ordenados para respetar su orden)
+      const partidasOrdenadasLicitacion = this.ordenarPartidasJerarquicamente(partidasBase, titulosOrdenadosLicitacion);
+      for (const partidaBase of partidasOrdenadasLicitacion) {
         const id_partida_nueva = await PartidaModel.generateNextId();
         const id_titulo_nuevo = partidaBase.id_titulo 
           ? mapaTitulosViejosANuevos.get(partidaBase.id_titulo) || null
@@ -1202,6 +1472,11 @@ export class VersionadoPresupuestoService {
           const id_precio_recurso_nuevo = recurso.id_precio_recurso
             ? mapaPreciosViejosANuevos.get(recurso.id_precio_recurso) || null
             : null;
+
+          // Actualizar id_partida_subpartida para que apunte a la partida subpartida clonada
+          const id_partida_subpartida_nuevo = recurso.id_partida_subpartida
+            ? mapaPartidasViejasANuevas.get(recurso.id_partida_subpartida) || null
+            : null;
           
           return {
             id_recurso_apu: `RAPU${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -1217,6 +1492,12 @@ export class VersionadoPresupuestoService {
             parcial: recurso.parcial,
             orden: recurso.orden,
             cuadrilla: recurso.cuadrilla,
+            // Campos de precio override
+            tiene_precio_override: recurso.tiene_precio_override,
+            precio_override: recurso.precio_override,
+            // Campos de subpartida (actualizar ID a la partida clonada)
+            id_partida_subpartida: id_partida_subpartida_nuevo,
+            precio_unitario_subpartida: recurso.precio_unitario_subpartida,
           };
         });
         
@@ -1408,7 +1689,9 @@ export class VersionadoPresupuestoService {
       const mapaTitulosViejosANuevos = new Map<string, string>();
       
       console.log(`[VersionadoPresupuestoService] Clonando ${titulosBase.length} títulos...`);
-      for (const tituloBase of titulosBase) {
+      // Ordenar títulos jerárquicamente antes de clonar
+      const titulosOrdenados = this.ordenarTitulosJerarquicamente(titulosBase);
+      for (const tituloBase of titulosOrdenados) {
         const id_titulo_nuevo = await TituloModel.generateNextId();
         const id_titulo_padre_nuevo = tituloBase.id_titulo_padre 
           ? mapaTitulosViejosANuevos.get(tituloBase.id_titulo_padre) || null
@@ -1430,7 +1713,9 @@ export class VersionadoPresupuestoService {
       const mapaPartidasViejasANuevas = new Map<string, string>();
       
       console.log(`[VersionadoPresupuestoService] Clonando ${partidasBase.length} partidas...`);
-      for (const partidaBase of partidasBase) {
+      // Ordenar partidas jerárquicamente antes de clonar (pasar títulos ordenados para respetar su orden)
+      const partidasOrdenadas = this.ordenarPartidasJerarquicamente(partidasBase, titulosOrdenados);
+      for (const partidaBase of partidasOrdenadas) {
         const id_partida_nueva = await PartidaModel.generateNextId();
         const id_titulo_nuevo = partidaBase.id_titulo 
           ? mapaTitulosViejosANuevos.get(partidaBase.id_titulo) || null
@@ -1556,6 +1841,11 @@ export class VersionadoPresupuestoService {
           const id_precio_recurso_nuevo = recurso.id_precio_recurso
             ? mapaPreciosViejosANuevos.get(recurso.id_precio_recurso) || null
             : null;
+
+          // Actualizar id_partida_subpartida para que apunte a la partida subpartida clonada
+          const id_partida_subpartida_nuevo = recurso.id_partida_subpartida
+            ? mapaPartidasViejasANuevas.get(recurso.id_partida_subpartida) || null
+            : null;
           
           return {
             id_recurso_apu: `RAPU${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -1571,6 +1861,12 @@ export class VersionadoPresupuestoService {
             parcial: recurso.parcial,
             orden: recurso.orden,
             cuadrilla: recurso.cuadrilla,
+            // Campos de precio override
+            tiene_precio_override: recurso.tiene_precio_override,
+            precio_override: recurso.precio_override,
+            // Campos de subpartida (actualizar ID a la partida clonada)
+            id_partida_subpartida: id_partida_subpartida_nuevo,
+            precio_unitario_subpartida: recurso.precio_unitario_subpartida,
           };
         });
         

@@ -12,7 +12,6 @@ export class Partida {
     public id_partida_padre: string | null,
     public nivel_partida: number,
     public numero_item: string,
-    public codigo_partida: string,
     public descripcion: string,
     public unidad_medida: string,
     public metrado: number,

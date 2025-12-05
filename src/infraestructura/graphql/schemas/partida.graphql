@@ -7,7 +7,6 @@ type Partida {
   id_partida_padre: String
   nivel_partida: Int!
   numero_item: String!
-  codigo_partida: String!
   descripcion: String!
   unidad_medida: String!
   metrado: Float!
@@ -40,7 +39,6 @@ extend type Mutation {
     id_partida_padre: String
     nivel_partida: Int!
     numero_item: String!
-    codigo_partida: String!
     descripcion: String!
     unidad_medida: String!
     metrado: Float!
@@ -56,7 +54,6 @@ extend type Mutation {
     id_partida_padre: String
     nivel_partida: Int
     numero_item: String
-    codigo_partida: String
     descripcion: String
     unidad_medida: String
     metrado: Float

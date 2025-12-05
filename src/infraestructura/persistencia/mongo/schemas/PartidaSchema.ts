@@ -8,7 +8,6 @@ export interface PartidaDocument extends Document {
   id_partida_padre: string | null;
   nivel_partida: number;
   numero_item: string;
-  codigo_partida: string;
   descripcion: string;
   unidad_medida: string;
   metrado: number;
@@ -30,7 +29,6 @@ const PartidaSchema = new Schema<PartidaDocument>({
   id_partida_padre: { type: String, default: null },
   nivel_partida: { type: Number, required: true, default: 1 },
   numero_item: { type: String, required: true },
-  codigo_partida: { type: String, required: true },
   descripcion: { type: String, required: true },
   unidad_medida: { type: String, required: true, default: 'und' },
   metrado: { type: Number, default: 0 },
@@ -54,9 +52,6 @@ PartidaSchema.index({ id_titulo: 1 });
 PartidaSchema.index({ id_partida_padre: 1 });
 PartidaSchema.index({ id_titulo: 1, orden: 1 });
 PartidaSchema.index({ id_titulo: 1, id_partida_padre: 1 });
-// Índice compuesto único: codigo_partida debe ser único por presupuesto (no por proyecto)
-// Esto permite que diferentes versiones del mismo proyecto tengan partidas con los mismos códigos
-PartidaSchema.index({ codigo_partida: 1, id_presupuesto: 1 }, { unique: true });
 
 PartidaSchema.statics['generateNextId'] = async function(): Promise<string> {
   try {

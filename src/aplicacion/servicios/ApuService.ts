@@ -6,6 +6,7 @@ import { ApuModel } from '../../infraestructura/persistencia/mongo/schemas/ApuSc
 import { PrecioRecursoPresupuestoService } from './PrecioRecursoPresupuestoService';
 import { PartidaService } from './PartidaService';
 import { RecalculoTotalesService } from './RecalculoTotalesService';
+import { PartidaModel } from '../../infraestructura/persistencia/mongo/schemas/PartidaSchema';
 import mongoose from 'mongoose';
 
 interface CrearApuInput extends Partial<Apu> {
@@ -59,6 +60,11 @@ export class ApuService extends BaseService<Apu> {
 
     if (recursos.length > 0 && this.precioRecursoPresupuestoService && data.id_presupuesto) {
       for (const recurso of recursos) {
+        // Si es subpartida, no manejar precios (las subpartidas tienen precio_unitario_subpartida)
+        if (recurso.id_partida_subpartida || !recurso.recurso_id) {
+          continue;
+        }
+
         const precioExistente = await this.precioRecursoPresupuestoService
           .obtenerPorPresupuestoYRecurso(data.id_presupuesto, recurso.recurso_id);
 
@@ -125,13 +131,26 @@ export class ApuService extends BaseService<Apu> {
       apu.jornada = data.jornada;
     }
     
-    if ((rendimientoCambio || jornadaCambio) && apu.recursos.length > 0 && this.precioRecursoPresupuestoService) {
-      const precios = await this.precioRecursoPresupuestoService.obtenerPorPresupuesto(apu.id_presupuesto);
-      const preciosMap = new Map(precios.map(p => [p.id_precio_recurso, p.precio]));
+    if ((rendimientoCambio || jornadaCambio) && apu.recursos.length > 0) {
+      const preciosMap = new Map<string, number>();
+      if (this.precioRecursoPresupuestoService) {
+        const precios = await this.precioRecursoPresupuestoService.obtenerPorPresupuesto(apu.id_presupuesto);
+        precios.forEach(p => {
+          preciosMap.set(p.id_precio_recurso, p.precio);
+        });
+      }
       
       for (const recurso of apu.recursos) {
-        if (recurso.id_precio_recurso && preciosMap.has(recurso.id_precio_recurso)) {
-          const precio = preciosMap.get(recurso.id_precio_recurso)!;
+        let precio = 0;
+        
+        // PRIORIDAD: Si tiene precio override, usarlo
+        if (recurso.tiene_precio_override && recurso.precio_override !== undefined) {
+          precio = recurso.precio_override;
+        } else if (recurso.id_precio_recurso && preciosMap.has(recurso.id_precio_recurso)) {
+          precio = preciosMap.get(recurso.id_precio_recurso)!;
+        }
+        
+        if (precio > 0) {
           recurso.parcial = recurso.calcularParcial(precio, apu.rendimiento, apu.jornada);
         }
       }
@@ -157,7 +176,13 @@ export class ApuService extends BaseService<Apu> {
     const apu = await this.obtenerPorId(id_apu);
     if (!apu) return null;
 
-    if (this.precioRecursoPresupuestoService) {
+    // Si tiene precio override, usar precio_override y NO actualizar PrecioRecursoPresupuesto
+    if (recurso.tiene_precio_override && recurso.precio_override !== undefined) {
+      // Usar precio_override directamente, no tocar PrecioRecursoPresupuesto
+      // El precio se calcula dinámicamente, no se guarda en RecursoApu
+      recurso.parcial = recurso.calcularParcial(recurso.precio_override, apu.rendimiento, apu.jornada);
+    } else if (!recurso.id_partida_subpartida && recurso.recurso_id && this.precioRecursoPresupuestoService) {
+      // Si NO tiene override, continuar con la lógica normal (precio compartido)
       const precioExistente = await this.precioRecursoPresupuestoService
         .obtenerPorPresupuestoYRecurso(apu.id_presupuesto, recurso.recurso_id);
       
@@ -204,45 +229,120 @@ export class ApuService extends BaseService<Apu> {
     const apuActual = await this.obtenerPorId(id_apu);
     const recursoCompleto = apuActual?.recursos.find(r => r.id_recurso_apu === id_recurso_apu);
     
-    if (!recursoCompleto || !this.precioRecursoPresupuestoService) {
+    if (!recursoCompleto) {
       return await this.apuRepository.actualizarRecurso(id_apu, id_recurso_apu, recurso);
     }
 
-    const precioExistente = await this.precioRecursoPresupuestoService
-      .obtenerPorPresupuestoYRecurso(apu.id_presupuesto, recursoCompleto.recurso_id);
+    // Si es subpartida, no manejar precios (las subpartidas tienen precio_unitario_subpartida)
+    // Para subpartidas, el parcial ya viene calculado (cantidad × precio_unitario_subpartida)
+    if (recursoCompleto.id_partida_subpartida || !recursoCompleto.recurso_id) {
+      // Si se actualiza el precio_unitario_subpartida o cantidad, recalcular parcial
+      if (recurso.precio_unitario_subpartida !== undefined || recurso.cantidad !== undefined) {
+        const precioUnitarioSubpartida = recurso.precio_unitario_subpartida ?? recursoCompleto.precio_unitario_subpartida ?? 0;
+        const cantidad = recurso.cantidad ?? recursoCompleto.cantidad;
+        recurso.parcial = Math.round(cantidad * precioUnitarioSubpartida * 100) / 100;
+      }
+      return await this.apuRepository.actualizarRecurso(id_apu, id_recurso_apu, recurso);
+    }
     
-    let precioFinal = precioUsuario;
+    // Si tiene precio override, usar precio_override y NO actualizar PrecioRecursoPresupuesto
+    if (recurso.tiene_precio_override !== undefined && recurso.tiene_precio_override) {
+      // Si se está activando el override o actualizando el precio_override
+      if (recurso.precio_override !== undefined) {
+        const precioFinal = recurso.precio_override;
+        
+        // Calcular parcial con precio_override
+        const cantidadFinal = recurso.cantidad !== undefined ? recurso.cantidad : recursoCompleto.cantidad;
+        const cuadrillaFinal = recurso.cuadrilla !== undefined ? recurso.cuadrilla : recursoCompleto.cuadrilla;
+        const desperdicioFinal = recurso.desperdicio_porcentaje !== undefined ? recurso.desperdicio_porcentaje : recursoCompleto.desperdicio_porcentaje;
+        
+        const recursoTemp = new RecursoApu(
+          recursoCompleto.id_recurso_apu,
+          recursoCompleto.recurso_id,
+          recursoCompleto.codigo_recurso,
+          recursoCompleto.descripcion,
+          recursoCompleto.unidad_medida,
+          recursoCompleto.tipo_recurso,
+          recursoCompleto.id_precio_recurso,
+          cantidadFinal,
+          desperdicioFinal,
+          cantidadFinal * (1 + desperdicioFinal / 100),
+          0,
+          recursoCompleto.orden,
+          cuadrillaFinal,
+          recursoCompleto.id_partida_subpartida,
+          recursoCompleto.precio_unitario_subpartida,
+          true, // tiene_precio_override
+          precioFinal // precio_override
+        );
+        
+        const parcialCalculado = this.calcularParcialRecurso(recursoTemp, precioFinal, apu);
+        recurso.parcial = parcialCalculado;
+        
+        // Asegurar que se guarden los campos de override
+        recurso.tiene_precio_override = true;
+        recurso.precio_override = precioFinal;
+        
+        // NO actualizar PrecioRecursoPresupuesto
+        const apuActualizado = await this.apuRepository.actualizarRecurso(id_apu, id_recurso_apu, recurso);
+        
+        if (apuActualizado) {
+          await this.actualizarPrecioPartida(apuActualizado.id_partida, apuActualizado.costo_directo);
+        }
+        
+        return apuActualizado;
+      }
+    } else if (recurso.tiene_precio_override === false) {
+      // Si se está desactivando el override, limpiar precio_override y usar precio compartido
+      recurso.precio_override = undefined;
+      // Asegurar que se guarde el estado de override desactivado
+      recurso.tiene_precio_override = false;
+      
+      // Continuar con la lógica normal para usar precio compartido
+      // (el código después de este bloque manejará el precio compartido)
+    }
     
-    if (precioExistente) {
-      if (Math.abs(precioUsuario - precioExistente.precio) > 0.01) {
-        await this.precioRecursoPresupuestoService.actualizarPrecio(
-          precioExistente.id_precio_recurso,
+    // Si NO tiene override (o se desactivó), continuar con la lógica normal (precio compartido)
+    if (!recurso.tiene_precio_override) {
+      if (!this.precioRecursoPresupuestoService) {
+        return await this.apuRepository.actualizarRecurso(id_apu, id_recurso_apu, recurso);
+      }
+
+      const precioExistente = await this.precioRecursoPresupuestoService
+        .obtenerPorPresupuestoYRecurso(apu.id_presupuesto, recursoCompleto.recurso_id);
+      
+      let precioFinal = precioUsuario;
+      
+      if (precioExistente) {
+        if (Math.abs(precioUsuario - precioExistente.precio) > 0.01) {
+          await this.precioRecursoPresupuestoService.actualizarPrecio(
+            precioExistente.id_precio_recurso,
+            precioUsuario,
+            usuarioId || 'system'
+          );
+          // Obtener el precio actualizado después de actualizarlo
+          const precioActualizado = await this.precioRecursoPresupuestoService.obtenerPorId(precioExistente.id_precio_recurso);
+          if (precioActualizado) {
+            precioFinal = precioActualizado.precio;
+          } else {
+            precioFinal = precioUsuario;
+          }
+        } else {
+          precioFinal = precioExistente.precio;
+        }
+        recurso.id_precio_recurso = precioExistente.id_precio_recurso;
+      } else {
+        await this.crearPrecioCompartido(
+          apu.id_presupuesto,
+          recursoCompleto,
           precioUsuario,
           usuarioId || 'system'
         );
-        // Obtener el precio actualizado después de actualizarlo
-        const precioActualizado = await this.precioRecursoPresupuestoService.obtenerPorId(precioExistente.id_precio_recurso);
-        if (precioActualizado) {
-          precioFinal = precioActualizado.precio;
-        } else {
-          precioFinal = precioUsuario;
-        }
-      } else {
-        precioFinal = precioExistente.precio;
+        recurso.id_precio_recurso = recursoCompleto.id_precio_recurso;
+        precioFinal = precioUsuario;
       }
-      recurso.id_precio_recurso = precioExistente.id_precio_recurso;
-    } else {
-      await this.crearPrecioCompartido(
-        apu.id_presupuesto,
-        recursoCompleto,
-        precioUsuario,
-        usuarioId || 'system'
-      );
-      recurso.id_precio_recurso = recursoCompleto.id_precio_recurso;
-      precioFinal = precioUsuario;
-    }
 
-      // Recalcular parcial con el precio actualizado
+      // Recalcular parcial con el precio compartido (no override)
       // Usar los valores del recurso actualizado (si vienen en recurso) o los del recurso completo
       const cantidadFinal = recurso.cantidad !== undefined ? recurso.cantidad : recursoCompleto.cantidad;
       const cuadrillaFinal = recurso.cuadrilla !== undefined ? recurso.cuadrilla : recursoCompleto.cuadrilla;
@@ -262,21 +362,44 @@ export class ApuService extends BaseService<Apu> {
         cantidadFinal * (1 + desperdicioFinal / 100),
         0, // parcial se calculará
         recursoCompleto.orden,
-        cuadrillaFinal
+        cuadrillaFinal,
+        recursoCompleto.id_partida_subpartida,
+        recursoCompleto.precio_unitario_subpartida,
+        recurso.tiene_precio_override ?? recursoCompleto.tiene_precio_override,
+        recurso.precio_override ?? recursoCompleto.precio_override
       );
       
       // Calcular parcial con el precio actualizado, considerando casos especiales
       const parcialCalculado = this.calcularParcialRecurso(recursoTemp, precioFinal, apu);
       recurso.parcial = parcialCalculado;
+      
+      // Preservar campos de override si no se están cambiando explícitamente
+      if (recurso.tiene_precio_override === undefined) {
+        recurso.tiene_precio_override = recursoCompleto.tiene_precio_override;
+      }
+      if (recurso.precio_override === undefined) {
+        // Si tiene override activado, preservar el precio_override
+        if (recurso.tiene_precio_override) {
+          recurso.precio_override = recursoCompleto.precio_override;
+        } else {
+          // Si no tiene override, asegurar que precio_override sea undefined
+          recurso.precio_override = undefined;
+        }
+      }
 
-    const apuActualizado = await this.apuRepository.actualizarRecurso(id_apu, id_recurso_apu, recurso);
-    
-    if (apuActualizado) {
-      // Actualizar precio_unitario de la partida
-      await this.actualizarPrecioPartida(apuActualizado.id_partida, apuActualizado.costo_directo);
+      const apuActualizado = await this.apuRepository.actualizarRecurso(id_apu, id_recurso_apu, recurso);
+      
+      if (apuActualizado) {
+        // Actualizar precio_unitario de la partida
+        await this.actualizarPrecioPartida(apuActualizado.id_partida, apuActualizado.costo_directo);
+      }
+      
+      return apuActualizado;
     }
     
-    return apuActualizado;
+    // Si llegamos aquí, significa que tiene override activado y ya se manejó arriba
+    // Este return nunca debería ejecutarse, pero TypeScript lo requiere
+    return null;
   }
 
   private async crearPrecioCompartido(
@@ -286,6 +409,7 @@ export class ApuService extends BaseService<Apu> {
     usuarioId: string
   ): Promise<void> {
     if (!this.precioRecursoPresupuestoService) return;
+    if (!recurso.recurso_id || !recurso.codigo_recurso) return;
 
     try {
       const nuevoPrecio = await this.precioRecursoPresupuestoService.crear({
@@ -331,8 +455,14 @@ export class ApuService extends BaseService<Apu> {
 
   /**
    * Calcula el parcial de un recurso considerando casos especiales (EQUIPO con "%mo" o "hm")
+   * Para subpartidas, usa precio_unitario_subpartida
    */
   private calcularParcialRecurso(recurso: RecursoApu, precio: number, apu: Apu): number {
+    // Si es subpartida, el parcial es cantidad × precio_unitario_subpartida
+    if (recurso.id_partida_subpartida && recurso.precio_unitario_subpartida !== undefined) {
+      return Math.round(recurso.cantidad * recurso.precio_unitario_subpartida * 100) / 100;
+    }
+    
     const unidadMedidaLower = recurso.unidad_medida?.toLowerCase() || '';
     
     // Si es EQUIPO con unidad "%mo", calcular basándose en la sumatoria de parciales de MANO_OBRA
@@ -443,17 +573,37 @@ export class ApuService extends BaseService<Apu> {
       for (const apu of apusAfectados) {
         // Primero calcular parciales de MANO_OBRA (necesarios para EQUIPO con "%mo")
         for (const recurso of apu.recursos) {
-          if (recurso.tipo_recurso === 'MANO_OBRA' && recurso.id_precio_recurso && preciosMap.has(recurso.id_precio_recurso)) {
-            const precio = preciosMap.get(recurso.id_precio_recurso)!;
-            recurso.parcial = recurso.calcularParcial(precio, apu.rendimiento, apu.jornada);
+          if (recurso.tipo_recurso === 'MANO_OBRA') {
+            let precio = 0;
+            
+            // PRIORIDAD: Si tiene precio override, usarlo
+            if (recurso.tiene_precio_override && recurso.precio_override !== undefined) {
+              precio = recurso.precio_override;
+            } else if (recurso.id_precio_recurso && preciosMap.has(recurso.id_precio_recurso)) {
+              precio = preciosMap.get(recurso.id_precio_recurso)!;
+            }
+            
+            if (precio > 0) {
+              recurso.parcial = recurso.calcularParcial(precio, apu.rendimiento, apu.jornada);
+            }
           }
         }
         
         // Luego calcular parciales de otros recursos (incluyendo EQUIPO que puede depender de MANO_OBRA)
         for (const recurso of apu.recursos) {
-          if (recurso.tipo_recurso !== 'MANO_OBRA' && recurso.id_precio_recurso && preciosMap.has(recurso.id_precio_recurso)) {
-            const precio = preciosMap.get(recurso.id_precio_recurso)!;
-            recurso.parcial = this.calcularParcialRecurso(recurso, precio, apu);
+          if (recurso.tipo_recurso !== 'MANO_OBRA') {
+            let precio = 0;
+            
+            // PRIORIDAD: Si tiene precio override, usarlo
+            if (recurso.tiene_precio_override && recurso.precio_override !== undefined) {
+              precio = recurso.precio_override;
+            } else if (recurso.id_precio_recurso && preciosMap.has(recurso.id_precio_recurso)) {
+              precio = preciosMap.get(recurso.id_precio_recurso)!;
+            }
+            
+            if (precio > 0) {
+              recurso.parcial = this.calcularParcialRecurso(recurso, precio, apu);
+            }
           }
         }
         
@@ -531,17 +681,37 @@ export class ApuService extends BaseService<Apu> {
       for (const apu of apusAfectados) {
         // Primero calcular parciales de MANO_OBRA
         for (const recurso of apu.recursos) {
-          if (recurso.tipo_recurso === 'MANO_OBRA' && recurso.id_precio_recurso && preciosMap.has(recurso.id_precio_recurso)) {
-            const precio = preciosMap.get(recurso.id_precio_recurso)!;
-            recurso.parcial = recurso.calcularParcial(precio, apu.rendimiento, apu.jornada);
+          if (recurso.tipo_recurso === 'MANO_OBRA') {
+            let precio = 0;
+            
+            // PRIORIDAD: Si tiene precio override, usarlo
+            if (recurso.tiene_precio_override && recurso.precio_override !== undefined) {
+              precio = recurso.precio_override;
+            } else if (recurso.id_precio_recurso && preciosMap.has(recurso.id_precio_recurso)) {
+              precio = preciosMap.get(recurso.id_precio_recurso)!;
+            }
+            
+            if (precio > 0) {
+              recurso.parcial = recurso.calcularParcial(precio, apu.rendimiento, apu.jornada);
+            }
           }
         }
         
         // Luego calcular parciales de otros recursos
         for (const recurso of apu.recursos) {
-          if (recurso.tipo_recurso !== 'MANO_OBRA' && recurso.id_precio_recurso && preciosMap.has(recurso.id_precio_recurso)) {
-            const precio = preciosMap.get(recurso.id_precio_recurso)!;
-            recurso.parcial = this.calcularParcialRecurso(recurso, precio, apu);
+          if (recurso.tipo_recurso !== 'MANO_OBRA') {
+            let precio = 0;
+            
+            // PRIORIDAD: Si tiene precio override, usarlo
+            if (recurso.tiene_precio_override && recurso.precio_override !== undefined) {
+              precio = recurso.precio_override;
+            } else if (recurso.id_precio_recurso && preciosMap.has(recurso.id_precio_recurso)) {
+              precio = preciosMap.get(recurso.id_precio_recurso)!;
+            }
+            
+            if (precio > 0) {
+              recurso.parcial = this.calcularParcialRecurso(recurso, precio, apu);
+            }
           }
         }
         
@@ -616,6 +786,142 @@ export class ApuService extends BaseService<Apu> {
 
   async eliminar(id_apu: string): Promise<boolean> {
     return await this.apuRepository.delete(id_apu);
+  }
+
+  /**
+   * Crea partidas subpartidas y sus APUs correspondientes
+   * Devuelve un mapeo de temp_id -> id_partida_real
+   */
+  async crearPartidasSubpartidasYAPUs(input: {
+    subpartidas: Array<{
+      temp_id: string;
+      id_partida_padre: string;
+      id_presupuesto: string;
+      id_proyecto: string;
+      id_titulo: string;
+      nivel_partida: number;
+      descripcion: string;
+      unidad_medida: string;
+      precio_unitario: number;
+      metrado: number;
+      rendimiento: number;
+      jornada: number;
+      recursos: Array<{
+        recurso_id?: string;
+        codigo_recurso?: string;
+        descripcion: string;
+        unidad_medida: string;
+        tipo_recurso: string;
+        id_precio_recurso?: string;
+        precio_usuario: number;
+        cuadrilla?: number;
+        cantidad: number;
+        desperdicio_porcentaje: number;
+        cantidad_con_desperdicio: number;
+        parcial: number;
+        orden: number;
+      }>;
+    }>;
+  }): Promise<Map<string, string>> {
+    const mapeoTempIdARealId = new Map<string, string>();
+    
+    if (!this.partidaService) {
+      throw new Error('PartidaService no está disponible');
+    }
+
+    if (input.subpartidas.length === 0) {
+      return mapeoTempIdARealId;
+    }
+
+    // Obtener partida padre para obtener datos necesarios
+    const primeraSubpartida = input.subpartidas[0];
+    if (!primeraSubpartida?.id_partida_padre) {
+      throw new Error('No se proporcionó id_partida_padre');
+    }
+
+    const partidaPadre = await this.partidaService.obtenerPorId(primeraSubpartida.id_partida_padre);
+    if (!partidaPadre) {
+      throw new Error('No se encontró la partida padre');
+    }
+
+    // Crear cada subpartida y su APU
+    for (const subpartida of input.subpartidas) {
+      // Generar ID real para la partida
+      const idPartidaReal = await PartidaModel.generateNextId();
+      
+      // Generar valor temporal para numero_item de subpartida
+      const timestamp = Date.now();
+      const numeroItemSubpartida = `SP-${timestamp}`;
+      
+      // Crear la partida subpartida
+      await this.partidaService.crear({
+        id_partida: idPartidaReal,
+        id_presupuesto: subpartida.id_presupuesto,
+        id_proyecto: subpartida.id_proyecto,
+        id_titulo: subpartida.id_titulo,
+        id_partida_padre: subpartida.id_partida_padre,
+        nivel_partida: subpartida.nivel_partida,
+        numero_item: numeroItemSubpartida,
+        descripcion: subpartida.descripcion,
+        unidad_medida: subpartida.unidad_medida,
+        metrado: subpartida.metrado,
+        precio_unitario: subpartida.precio_unitario,
+        parcial_partida: subpartida.metrado * subpartida.precio_unitario,
+        orden: 0,
+        estado: 'Activa',
+      });
+
+      // Crear recursos para el APU y mapeo de precios
+      const recursosAPU: RecursoApu[] = [];
+      const preciosRecursos = new Map<string, number>();
+      
+      for (const recursoInput of subpartida.recursos) {
+        // Generar id_recurso_apu como en la plantilla
+        const idRecursoApu = `RAPU${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        const recursoApu = new RecursoApu(
+          idRecursoApu,
+          recursoInput.recurso_id || '',
+          recursoInput.codigo_recurso || '',
+          recursoInput.descripcion,
+          recursoInput.unidad_medida,
+          recursoInput.tipo_recurso as any,
+          recursoInput.id_precio_recurso || '',
+          recursoInput.cantidad,
+          recursoInput.desperdicio_porcentaje,
+          recursoInput.cantidad_con_desperdicio,
+          recursoInput.parcial,
+          recursoInput.orden,
+          recursoInput.cuadrilla,
+          undefined, // id_partida_subpartida (solo para recursos que SON subpartidas)
+          undefined  // precio_unitario_subpartida (solo para recursos que SON subpartidas)
+        );
+
+        recursosAPU.push(recursoApu);
+        
+        // Guardar precio en el mapa si hay recurso_id
+        if (recursoInput.recurso_id && recursoInput.precio_usuario > 0) {
+          preciosRecursos.set(recursoInput.recurso_id, recursoInput.precio_usuario);
+        }
+      }
+
+      // Crear el APU de la subpartida
+      await this.crear({
+        id_partida: idPartidaReal,
+        id_presupuesto: subpartida.id_presupuesto,
+        id_proyecto: subpartida.id_proyecto,
+        rendimiento: subpartida.rendimiento,
+        jornada: subpartida.jornada,
+        recursos: recursosAPU,
+        precios_recursos: preciosRecursos,
+        usuario_actualizo: 'system',
+      });
+
+      // Guardar mapeo
+      mapeoTempIdARealId.set(subpartida.temp_id, idPartidaReal);
+    }
+
+    return mapeoTempIdARealId;
   }
 }
 

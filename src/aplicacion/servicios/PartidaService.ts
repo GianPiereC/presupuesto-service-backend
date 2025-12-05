@@ -59,20 +59,6 @@ export class PartidaService extends BaseService<Partida> {
       id_partida: idPartida
     };
     
-    // Validar unicidad de codigo_partida por proyecto
-    if (partidaData.codigo_partida && partidaData.id_proyecto) {
-      const existente = await this.partidaRepository.obtenerPorCodigoYProyecto(
-        partidaData.codigo_partida,
-        partidaData.id_proyecto
-      );
-      if (existente) {
-        throw new ValidationException(
-          `Ya existe una partida con el código "${partidaData.codigo_partida}" en este proyecto`,
-          'codigo_partida'
-        );
-      }
-    }
-    
     // Calcular parcial si no existe
     if (partidaData.metrado !== undefined && partidaData.precio_unitario !== undefined) {
       partidaData.parcial_partida = (partidaData.metrado || 0) * (partidaData.precio_unitario || 0);
@@ -97,24 +83,6 @@ export class PartidaService extends BaseService<Partida> {
   }
 
   async actualizar(id_partida: string, data: Partial<Partida>): Promise<Partida | null> {
-    // Validar unicidad de codigo_partida por proyecto si se está actualizando
-    if (data.codigo_partida) {
-      const partidaActual = await this.obtenerPorId(id_partida);
-      if (partidaActual) {
-        const id_proyecto = data.id_proyecto || partidaActual.id_proyecto;
-        const existente = await this.partidaRepository.obtenerPorCodigoYProyecto(
-          data.codigo_partida,
-          id_proyecto,
-          id_partida // Excluir la partida actual
-        );
-        if (existente) {
-          throw new ValidationException(
-            `Ya existe otra partida con el código "${data.codigo_partida}" en este proyecto`,
-            'codigo_partida'
-          );
-        }
-      }
-    }
     
     // Obtener partida actual antes de actualizar (para detectar cambio de título)
     const partidaActual = await this.obtenerPorId(id_partida);

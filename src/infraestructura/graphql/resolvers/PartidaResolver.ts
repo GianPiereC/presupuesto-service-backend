@@ -159,7 +159,6 @@ export class PartidaResolver {
                 id_partida_padre: args.id_partida_padre || null,
                 nivel_partida: args.nivel_partida,
                 numero_item: args.numero_item,
-                codigo_partida: args.codigo_partida,
                 descripcion: args.descripcion,
                 unidad_medida: args.unidad_medida,
                 metrado: args.metrado,
@@ -188,7 +187,6 @@ export class PartidaResolver {
               if (args.id_partida_padre !== undefined) data.id_partida_padre = args.id_partida_padre;
               if (args.nivel_partida !== undefined) data.nivel_partida = args.nivel_partida;
               if (args.numero_item !== undefined) data.numero_item = args.numero_item;
-              if (args.codigo_partida !== undefined) data.codigo_partida = args.codigo_partida;
               if (args.descripcion !== undefined) data.descripcion = args.descripcion;
               if (args.unidad_medida !== undefined) data.unidad_medida = args.unidad_medida;
               if (args.metrado !== undefined) data.metrado = args.metrado;

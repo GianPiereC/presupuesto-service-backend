@@ -30,6 +30,7 @@
     "@graphql-tools/load-files": "^7.0.0",
     "@graphql-tools/merge": "^9.0.0",
     "@graphql-tools/schema": "^10.0.0",
+    "@graphql-tools/utils": "^10.0.0",
     "apollo-server-core": "^3.12.1",
     "apollo-server-express": "^3.12.1",
     "apollo-upload-client": "^19.0.0",

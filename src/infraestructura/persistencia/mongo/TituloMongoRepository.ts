@@ -80,5 +80,14 @@ export class TituloMongoRepository extends BaseMongoRepository<Titulo> implement
     const doc = await this.model.findOne(query);
     return doc ? this.toDomain(doc) : null;
   }
+
+  async obtenerPorNumeroItemYPresupuesto(numero_item: string, id_presupuesto: string, excludeId?: string): Promise<Titulo | null> {
+    const query: any = { numero_item, id_presupuesto };
+    if (excludeId) {
+      query.id_titulo = { $ne: excludeId };
+    }
+    const doc = await this.model.findOne(query);
+    return doc ? this.toDomain(doc) : null;
+  }
 }
 

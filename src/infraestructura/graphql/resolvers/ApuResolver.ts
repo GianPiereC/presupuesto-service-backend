@@ -4,6 +4,7 @@ import { PrecioRecursoPresupuestoService } from '../../../aplicacion/servicios/P
 import { Apu } from '../../../dominio/entidades/Apu';
 import { RecursoApu } from '../../../dominio/entidades/RecursoApu';
 import { ErrorHandler } from './ErrorHandler';
+import { EntityNotFoundException } from '../../../dominio/exceptions/DomainException';
 import { ApuModel } from '../../persistencia/mongo/schemas/ApuSchema';
 import { mapearTipoCostoRecursoATipoApu } from '../../../dominio/utilidades/TipoRecursoMapper';
 
@@ -154,12 +155,24 @@ export class ApuResolver {
           return await ErrorHandler.handleError(
             async () => {
               const apu = await this.apuService.obtenerPorId(id_apu);
-              if (!apu) return null;
+              if (!apu) {
+                throw new EntityNotFoundException(
+                  `APU con id ${id_apu} no encontrado`,
+                  'APU',
+                  id_apu
+                );
+              }
               
+              // Obtener el _id ANTES de eliminar el APU
+              const mongoId = await this.getMongoIdAsync(apu.id_apu);
+              
+              // Eliminar el APU
               await this.apuService.eliminar(id_apu);
+              
+              // Retornar el objeto con el _id obtenido antes de eliminar
               return {
                 ...await this.toObject(apu),
-                _id: await this.getMongoIdAsync(apu.id_apu)
+                _id: mongoId || null
               };
             },
             'deleteApu',
@@ -214,8 +227,31 @@ export class ApuResolver {
         ) => {
           return await ErrorHandler.handleError(
             async () => {
+              // Verificar que el APU existe
+              const apuExistente = await this.apuService.obtenerPorId(id_apu);
+              if (!apuExistente) {
+                throw new EntityNotFoundException(
+                  `APU con id ${id_apu} no encontrado`,
+                  'APU',
+                  id_apu
+                );
+              }
+
+              // Verificar que el recurso existe en el APU
+              const recursoExistente = apuExistente.recursos.find(r => r.id_recurso_apu === id_recurso_apu);
+              if (!recursoExistente) {
+                throw new EntityNotFoundException(
+                  `Recurso con id ${id_recurso_apu} no encontrado en el APU ${id_apu}`,
+                  'RecursoApu',
+                  id_recurso_apu
+                );
+              }
+
+              // Eliminar el recurso
               const apu = await this.apuService.eliminarRecurso(id_apu, id_recurso_apu);
-              if (!apu) return null;
+              if (!apu) {
+                throw new Error(`Error al eliminar el recurso ${id_recurso_apu} del APU ${id_apu}`);
+              }
               
               return {
                 ...await this.toObject(apu),
@@ -224,6 +260,58 @@ export class ApuResolver {
             },
             'removeRecursoFromApu',
             { id_apu, id_recurso_apu }
+          );
+        },
+        crearPartidasSubpartidasYAPUs: async (
+          _: any,
+          { subpartidas }: { subpartidas: any[] }
+        ) => {
+          return await ErrorHandler.handleError(
+            async () => {
+              const mapeo = await this.apuService.crearPartidasSubpartidasYAPUs({
+                subpartidas: subpartidas.map(sp => ({
+                  temp_id: sp.temp_id,
+                  id_partida_padre: sp.id_partida_padre,
+                  id_presupuesto: sp.id_presupuesto,
+                  id_proyecto: sp.id_proyecto,
+                  id_titulo: sp.id_titulo,
+                  nivel_partida: sp.nivel_partida,
+                  descripcion: sp.descripcion,
+                  unidad_medida: sp.unidad_medida,
+                  precio_unitario: sp.precio_unitario,
+                  metrado: sp.metrado,
+                  rendimiento: sp.rendimiento,
+                  jornada: sp.jornada,
+                  recursos: sp.recursos.map((r: any) => ({
+                    recurso_id: r.recurso_id,
+                    codigo_recurso: r.codigo_recurso,
+                    descripcion: r.descripcion,
+                    unidad_medida: r.unidad_medida,
+                    tipo_recurso: r.tipo_recurso,
+                    id_precio_recurso: r.id_precio_recurso,
+                    precio_usuario: r.precio_usuario,
+                    cuadrilla: r.cuadrilla,
+                    cantidad: r.cantidad,
+                    desperdicio_porcentaje: r.desperdicio_porcentaje,
+                    cantidad_con_desperdicio: r.cantidad_con_desperdicio,
+                    parcial: r.parcial,
+                    orden: r.orden,
+                  })),
+                })),
+              });
+              
+              // Convertir Map a array para GraphQL
+              const mapeoArray = Array.from(mapeo.entries()).map(([temp_id, id_partida_real]) => ({
+                temp_id,
+                id_partida_real
+              }));
+              
+              return {
+                mapeo: mapeoArray
+              };
+            },
+            'crearPartidasSubpartidasYAPUs',
+            { subpartidas }
           );
         }
       }
@@ -266,7 +354,11 @@ export class ApuResolver {
       input.cantidad_con_desperdicio || (input.cantidad * (1 + (input.desperdicio_porcentaje || 0) / 100)),
       input.parcial || 0,
       input.orden || 0,
-      input.cuadrilla
+      input.cuadrilla,
+      input.id_partida_subpartida,
+      input.precio_unitario_subpartida,
+      input.tiene_precio_override,
+      input.precio_override
     );
   }
 
@@ -295,10 +387,15 @@ export class ApuResolver {
           : cantidad * (1 + desperdicio / 100);
         
         let precio = 0;
-        if (r.id_precio_recurso && preciosMap.has(r.id_precio_recurso)) {
+        
+        // PRIORIDAD 1: Si tiene precio override, usarlo directamente
+        if (r.tiene_precio_override && r.precio_override !== undefined && r.precio_override !== null) {
+          precio = r.precio_override;
+        } else if (r.id_precio_recurso && preciosMap.has(r.id_precio_recurso)) {
+          // PRIORIDAD 2: Si no tiene override, usar precio compartido
           precio = preciosMap.get(r.id_precio_recurso)!;
         } else {
-          // Si no hay precio compartido, intentar calcular desde parcial guardado
+          // PRIORIDAD 3: Si no hay precio compartido, intentar calcular desde parcial guardado
           const tipoRecurso = r.tipo_recurso || 'MATERIAL';
           if (tipoRecurso === 'MANO_OBRA' && apu.rendimiento > 0 && apu.jornada > 0 && r.parcial) {
             // Despejar precio desde parcial: Precio = Parcial / ((1 / Rendimiento) × Jornada × Cuadrilla)
@@ -315,65 +412,82 @@ export class ApuResolver {
           return Math.round(num * 10000) / 10000;
         };
 
+        // Para subpartidas, el precio puede venir del precio_unitario_subpartida
+        let precioFinal = precio;
+        if (r.id_partida_subpartida && r.precio_unitario_subpartida !== undefined) {
+          precioFinal = r.precio_unitario_subpartida;
+        }
+        
         // Usar el parcial guardado si existe, sino recalcular
         let parcial = typeof r.parcial === 'number' ? r.parcial : 0;
         const tipoRecurso = r.tipo_recurso || 'MATERIAL';
         
-        // Solo recalcular si el parcial no está guardado o es 0
-        if (!parcial || parcial === 0) {
-          switch (tipoRecurso) {
-            case 'MATERIAL':
-              parcial = truncateToFour(cantidadConDesperdicio * precio);
-              break;
-            
-          case 'MANO_OBRA': {
-            // Fórmula correcta para MANO DE OBRA:
-            // Parcial_MO = (1 / Rendimiento) × Jornada × Cuadrilla × Precio_Hora
-            // O también: Parcial_MO = Cantidad × Precio_Hora (donde Cantidad = (Jornada × Cuadrilla) / Rendimiento)
-            if (apu.rendimiento > 0 && apu.jornada > 0) {
-              const cuadrillaValue = r.cuadrilla || 1;
-              parcial = truncateToFour((1 / apu.rendimiento) * apu.jornada * cuadrillaValue * precio);
-            } else {
-              parcial = 0;
-            }
-            break;
+        // Si es subpartida, recalcular parcial como cantidad × precio_unitario_subpartida
+        if (r.id_partida_subpartida && r.precio_unitario_subpartida !== undefined) {
+          if (!parcial || parcial === 0) {
+            parcial = Math.round(cantidad * precioFinal * 100) / 100;
           }
-            
-            case 'EQUIPO':
+        } else {
+          // Solo recalcular si el parcial no está guardado o es 0
+          if (!parcial || parcial === 0) {
+            switch (tipoRecurso) {
+              case 'MATERIAL':
+                parcial = truncateToFour(cantidadConDesperdicio * precioFinal);
+                break;
+              
+            case 'MANO_OBRA': {
+              // Fórmula correcta para MANO DE OBRA:
+              // Parcial_MO = (1 / Rendimiento) × Jornada × Cuadrilla × Precio_Hora
+              // O también: Parcial_MO = Cantidad × Precio_Hora (donde Cantidad = (Jornada × Cuadrilla) / Rendimiento)
               if (apu.rendimiento > 0 && apu.jornada > 0) {
-                const horasMaquina = (cantidad / apu.rendimiento) * apu.jornada;
-                parcial = truncateToFour(horasMaquina * precio);
+                const cuadrillaValue = r.cuadrilla || 1;
+                parcial = truncateToFour((1 / apu.rendimiento) * apu.jornada * cuadrillaValue * precioFinal);
               } else {
                 parcial = 0;
               }
               break;
-            
-            case 'SUBCONTRATO':
-              parcial = truncateToFour(cantidad * precio);
-              break;
-            
-            default:
-              parcial = truncateToFour(cantidadConDesperdicio * precio);
+            }
+              
+              case 'EQUIPO':
+                if (apu.rendimiento > 0 && apu.jornada > 0) {
+                  const horasMaquina = (cantidad / apu.rendimiento) * apu.jornada;
+                  parcial = truncateToFour(horasMaquina * precioFinal);
+                } else {
+                  parcial = 0;
+                }
+                break;
+              
+              case 'SUBCONTRATO':
+                parcial = truncateToFour(cantidad * precioFinal);
+                break;
+              
+              default:
+                parcial = truncateToFour(cantidadConDesperdicio * precioFinal);
+            }
+          } else {
+            // Asegurar que el parcial guardado esté truncado a 4 decimales
+            parcial = truncateToFour(parcial);
           }
-        } else {
-          // Asegurar que el parcial guardado esté truncado a 4 decimales
-          parcial = truncateToFour(parcial);
         }
         
         return {
           id_recurso_apu: r.id_recurso_apu || '',
-          recurso_id: r.recurso_id || '',
-          codigo_recurso: r.codigo_recurso || '',
+          recurso_id: r.recurso_id || undefined,
+          id_partida_subpartida: r.id_partida_subpartida || undefined,
+          codigo_recurso: r.codigo_recurso || null,
           descripcion: r.descripcion || '',
           unidad_medida: r.unidad_medida || '',
           tipo_recurso: r.tipo_recurso || 'MATERIAL',
           id_precio_recurso: r.id_precio_recurso ?? null,
-          precio: precio,
+          precio: precioFinal,
           cuadrilla: r.cuadrilla ?? null,
           cantidad: cantidad,
           desperdicio_porcentaje: desperdicio,
           cantidad_con_desperdicio: cantidadConDesperdicio,
           parcial: parcial,
+          precio_unitario_subpartida: r.precio_unitario_subpartida || undefined,
+          tiene_precio_override: r.tiene_precio_override || false,
+          precio_override: r.precio_override || undefined,
           orden: typeof r.orden === 'number' ? r.orden : 0
         };
       })

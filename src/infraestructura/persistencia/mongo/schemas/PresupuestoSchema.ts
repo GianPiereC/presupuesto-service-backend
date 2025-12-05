@@ -29,11 +29,13 @@ export interface PresupuestoDocument extends Document {
   version_licitacion_aprobada?: number;
   id_presupuesto_contractual?: string;
   version_contractual_aprobada?: number;
+  id_presupuesto_meta_vigente?: string;
+  version_meta_vigente?: number;
   es_inmutable?: boolean;
   es_activo?: boolean;
   estado?: 'borrador' | 'en_revision' | 'aprobado' | 'rechazado' | 'vigente';
   estado_aprobacion?: {
-    tipo: 'LICITACION_A_CONTRACTUAL' | 'CONTRACTUAL_A_META' | null;
+    tipo: 'LICITACION_A_CONTRACTUAL' | 'CONTRACTUAL_A_META' | 'NUEVA_VERSION_META' | 'OFICIALIZAR_META' | null;
     estado: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | null;
     id_aprobacion?: string;
   };
@@ -98,6 +100,8 @@ const PresupuestoSchema = new Schema<PresupuestoDocument>({
   version_licitacion_aprobada: { type: Number },
   id_presupuesto_contractual: { type: String },
   version_contractual_aprobada: { type: Number },
+  id_presupuesto_meta_vigente: { type: String },
+  version_meta_vigente: { type: Number },
   es_inmutable: { type: Boolean, default: false },
   es_activo: { type: Boolean, default: false },
   estado: {
@@ -107,7 +111,7 @@ const PresupuestoSchema = new Schema<PresupuestoDocument>({
   estado_aprobacion: {
     tipo: {
       type: String,
-      enum: ['LICITACION_A_CONTRACTUAL', 'CONTRACTUAL_A_META', null]
+      enum: ['LICITACION_A_CONTRACTUAL', 'CONTRACTUAL_A_META', 'NUEVA_VERSION_META', 'OFICIALIZAR_META', null]
     },
     estado: {
       type: String,

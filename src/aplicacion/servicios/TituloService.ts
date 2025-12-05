@@ -57,15 +57,15 @@ export class TituloService extends BaseService<Titulo> {
       (data as any).id_titulo = await TituloModel.generateNextId();
     }
     
-    // Validar unicidad de numero_item por proyecto
-    if (data.numero_item && data.id_proyecto) {
-      const existente = await this.tituloRepository.obtenerPorNumeroItemYProyecto(
+    // Validar unicidad de numero_item por presupuesto (permite mismo numero_item en diferentes versiones)
+    if (data.numero_item && data.id_presupuesto) {
+      const existente = await this.tituloRepository.obtenerPorNumeroItemYPresupuesto(
         data.numero_item,
-        data.id_proyecto
+        data.id_presupuesto
       );
       if (existente) {
         throw new ValidationException(
-          `Ya existe un título con el número de item "${data.numero_item}" en este proyecto`,
+          `Ya existe un título con el número de item "${data.numero_item}" en este presupuesto`,
           'numero_item'
         );
       }
@@ -90,14 +90,14 @@ export class TituloService extends BaseService<Titulo> {
   }
 
   async actualizar(id_titulo: string, data: Partial<Titulo>, skipRecalculo: boolean = false): Promise<Titulo | null> {
-    // Validar unicidad de numero_item por proyecto si se está actualizando
+    // Validar unicidad de numero_item por presupuesto si se está actualizando
     if (data.numero_item) {
       const tituloActual = await this.obtenerPorId(id_titulo);
       if (tituloActual) {
-        const id_proyecto = data.id_proyecto || tituloActual.id_proyecto;
-        const existente = await this.tituloRepository.obtenerPorNumeroItemYProyecto(
+        const id_presupuesto = data.id_presupuesto || tituloActual.id_presupuesto;
+        const existente = await this.tituloRepository.obtenerPorNumeroItemYPresupuesto(
           data.numero_item,
-          id_proyecto,
+          id_presupuesto,
           id_titulo // Excluir el título actual
         );
         if (existente) {

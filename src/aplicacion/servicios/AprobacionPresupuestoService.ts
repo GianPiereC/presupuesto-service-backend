@@ -104,7 +104,9 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
         
         // Determinar la fase según el tipo de aprobación
         let faseBusqueda = 'LICITACION';
-        if (aprobacion.tipo_aprobacion === 'CONTRACTUAL_A_META' || aprobacion.tipo_aprobacion === 'NUEVA_VERSION_META') {
+        if (aprobacion.tipo_aprobacion === 'CONTRACTUAL_A_META' || 
+            aprobacion.tipo_aprobacion === 'NUEVA_VERSION_META' ||
+            aprobacion.tipo_aprobacion === 'OFICIALIZAR_META') {
           faseBusqueda = 'META';
         } else if (aprobacion.tipo_aprobacion === 'LICITACION_A_CONTRACTUAL') {
           faseBusqueda = 'LICITACION';
@@ -266,6 +268,49 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
       console.log(`[AprobacionPresupuestoService] Versión META aprobada: ${versionMeta.id_presupuesto} (V${aprobacion.version_presupuesto} → V${nuevoNumeroVersion})`);
     }
 
+    // Si es aprobación de oficialización META (poner en vigencia)
+    if (aprobacion.tipo_aprobacion === 'OFICIALIZAR_META' && aprobacion.version_presupuesto) {
+      // Buscar la versión META que se está oficializando (debe estar en en_revision)
+      const versionMeta = await PresupuestoModel.findOne({
+        id_grupo_version: aprobacion.id_grupo_version,
+        fase: 'META',
+        version: aprobacion.version_presupuesto,
+        estado: 'en_revision'
+      }).lean();
+
+      if (!versionMeta || !versionMeta.id_presupuesto) {
+        throw new Error(`No se encontró la versión META ${aprobacion.version_presupuesto} en estado en_revision para oficializar`);
+      }
+
+      // Buscar si hay alguna versión vigente actualmente y cambiarla a aprobado
+      const versionVigenteActual = await PresupuestoModel.findOne({
+        id_grupo_version: aprobacion.id_grupo_version,
+        fase: 'META',
+        estado: 'vigente'
+      }).lean();
+
+      if (versionVigenteActual && versionVigenteActual.id_presupuesto) {
+        await this.presupuestoRepository.update(versionVigenteActual.id_presupuesto, {
+          estado: 'aprobado'
+        });
+        console.log(`[AprobacionPresupuestoService] Versión META vigente anterior actualizada a aprobado: ${versionVigenteActual.id_presupuesto} (V${versionVigenteActual.version})`);
+      }
+
+      // Actualizar la versión a estado vigente
+      await this.presupuestoRepository.update(versionMeta.id_presupuesto, {
+        estado: 'vigente',
+        estado_aprobacion: undefined
+      });
+
+      // Actualizar el presupuesto padre con la referencia a la versión vigente
+      await this.presupuestoRepository.update(aprobacion.id_presupuesto, {
+        id_presupuesto_meta_vigente: versionMeta.id_presupuesto,
+        version_meta_vigente: versionMeta.version
+      });
+
+      console.log(`[AprobacionPresupuestoService] Versión META oficializada (puesta en vigencia): ${versionMeta.id_presupuesto} (V${aprobacion.version_presupuesto})`);
+    }
+
     // Actualizar la aprobación
     const aprobacionActualizada = await this.aprobacionRepository.actualizar(id_aprobacion, {
       estado: 'APROBADO',
@@ -317,27 +362,70 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
     // Limpiar estado_aprobacion del presupuesto padre o versión
     const presupuesto = await this.presupuestoRepository.obtenerPorIdPresupuesto(aprobacion.id_presupuesto);
     if (presupuesto) {
-      // Si es aprobación de nueva versión META, actualizar la versión específica
-      if (aprobacion.tipo_aprobacion === 'NUEVA_VERSION_META' && aprobacion.version_presupuesto) {
-        // Buscar la versión sin filtrar por estado (puede estar en en_revision o borrador)
+      // Si es aprobación de nueva versión META, actualizar SOLO la versión específica rechazada
+      if (aprobacion.tipo_aprobacion === 'NUEVA_VERSION_META') {
+        // Buscar la versión específica que está en revisión usando el id_aprobacion guardado
+        // Esto garantiza encontrar la versión correcta y NO afectar las versiones aprobadas
         const versionMeta = await PresupuestoModel.findOne({
           id_grupo_version: aprobacion.id_grupo_version,
           fase: 'META',
-          version: aprobacion.version_presupuesto
+          estado: 'en_revision',
+          'estado_aprobacion.id_aprobacion': id_aprobacion
         }).lean();
 
         if (versionMeta && versionMeta.id_presupuesto) {
           // Cambiar la versión a estado rechazado (no borrador, para que aparezca como rechazada)
+          // IMPORTANTE: Solo actualizar esta versión específica, NO el padre ni otras versiones
           await this.presupuestoRepository.update(versionMeta.id_presupuesto, {
             estado: 'rechazado',
             estado_aprobacion: undefined
           });
-          console.log(`[AprobacionPresupuestoService] Versión META rechazada: ${versionMeta.id_presupuesto} (V${aprobacion.version_presupuesto})`);
+          console.log(`[AprobacionPresupuestoService] Versión META rechazada: ${versionMeta.id_presupuesto} (V${versionMeta.version}) - estado: en_revision → rechazado`);
         } else {
-          console.warn(`[AprobacionPresupuestoService] No se encontró la versión META ${aprobacion.version_presupuesto} para rechazar`);
+          console.warn(`[AprobacionPresupuestoService] No se encontró la versión META en estado en_revision con id_aprobacion ${id_aprobacion} para rechazar`);
         }
+        // NO actualizar el presupuesto padre para NUEVA_VERSION_META, ya que puede haber otras versiones aprobadas
+      } else if (aprobacion.tipo_aprobacion === 'OFICIALIZAR_META') {
+        // Buscar la versión específica que está en revisión usando el id_aprobacion guardado
+        const versionMeta = await PresupuestoModel.findOne({
+          id_grupo_version: aprobacion.id_grupo_version,
+          fase: 'META',
+          estado: 'en_revision',
+          'estado_aprobacion.id_aprobacion': id_aprobacion
+        }).lean();
+
+        if (versionMeta && versionMeta.id_presupuesto) {
+          // Cambiar la versión a estado aprobado (volver al estado anterior antes de enviar a oficialización)
+          await this.presupuestoRepository.update(versionMeta.id_presupuesto, {
+            estado: 'aprobado',
+            estado_aprobacion: undefined
+          });
+          console.log(`[AprobacionPresupuestoService] Versión META rechazada para oficialización: ${versionMeta.id_presupuesto} (V${versionMeta.version}) - estado: en_revision → aprobado`);
+        } else {
+          console.warn(`[AprobacionPresupuestoService] No se encontró la versión META en estado en_revision con id_aprobacion ${id_aprobacion} para rechazar oficialización`);
+        }
+        // NO actualizar el presupuesto padre para OFICIALIZAR_META cuando se rechaza
+      } else if (aprobacion.tipo_aprobacion === 'CONTRACTUAL_A_META') {
+        // Para CONTRACTUAL_A_META, buscar la versión META específica que se está rechazando
+        if (aprobacion.version_presupuesto) {
+          const versionMeta = await PresupuestoModel.findOne({
+            id_grupo_version: aprobacion.id_grupo_version,
+            fase: 'META',
+            version: aprobacion.version_presupuesto
+          }).lean();
+
+          if (versionMeta && versionMeta.id_presupuesto) {
+            // Actualizar solo la versión específica rechazada
+            await this.presupuestoRepository.update(versionMeta.id_presupuesto, {
+              estado: 'rechazado',
+              estado_aprobacion: undefined
+            });
+            console.log(`[AprobacionPresupuestoService] Versión META rechazada (CONTRACTUAL_A_META): ${versionMeta.id_presupuesto} (V${aprobacion.version_presupuesto})`);
+          }
+        }
+        // NO actualizar el presupuesto padre para CONTRACTUAL_A_META si hay version_presupuesto
       } else {
-        // Para otros tipos, actualizar el padre
+        // Para otros tipos (LICITACION_A_CONTRACTUAL), actualizar el padre
         await this.presupuestoRepository.update(aprobacion.id_presupuesto, {
           estado_aprobacion: undefined,
           estado: 'rechazado'
