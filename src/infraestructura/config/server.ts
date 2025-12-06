@@ -18,15 +18,7 @@ const config = {
   timeout: 600000,
   maxFileSize: 50 * 1024 * 1024,
   maxFiles: 100,
-  allowedOrigins: [
-    "https://velimaq.vercel.app",
-    "https://appnufago.inacons.com.pe",
-    "https://kapo-gestion.vercel.app",
-    "https://inacons.vercel.app",
-    "https://kapo-informes.vercel.app",
-    "https://kapo-operaciones.vercel.app",
-    "https://kapo-tareo-bakend-production.up.railway.app",
-  ]
+  allowedOrigins: configService.getCorsOrigins()
 };
 
 const corsOptions = {

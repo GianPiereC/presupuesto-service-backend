@@ -43,7 +43,8 @@ export class ConfigService {
       'GOOGLE_CLOUD_BUCKET',
       'GOOGLE_CLOUD_KEY_FILE',
       'INACONS_BACKEND_URL',
-      'PERSONAL_BACKEND_URL'
+      'PERSONAL_BACKEND_URL',
+      'CORS_ORIGINS'
     ];
 
     envVars.forEach(envVar => {
@@ -201,6 +202,27 @@ export class ConfigService {
    */
   isDevelopment(): boolean {
     return this.getNodeEnv() === 'development';
+  }
+
+  /**
+   * Obtener orígenes permitidos para CORS
+   */
+  getCorsOrigins(): string[] {
+    const corsOrigins = this.get('CORS_ORIGINS');
+    if (corsOrigins) {
+      // Separar por comas y quitar espacios
+      return corsOrigins.split(',').map(origin => origin.trim()).filter(origin => origin.length > 0);
+    }
+    // Valores por defecto si no está configurado
+    return [
+      'https://velimaq.vercel.app',
+      'https://appnufago.inacons.com.pe',
+      'https://kapo-gestion.vercel.app',
+      'https://inacons.vercel.app',
+      'https://kapo-informes.vercel.app',
+      'https://kapo-operaciones.vercel.app',
+      'https://kapo-tareo-bakend-production.up.railway.app',
+    ];
   }
 
   /**
