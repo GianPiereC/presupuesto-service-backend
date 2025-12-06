@@ -8,3 +8,4 @@ export interface IEspecialidadRepository extends IBaseRepository<Especialidad> {
 
 
 
+
