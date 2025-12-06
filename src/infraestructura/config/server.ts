@@ -22,7 +22,7 @@ const config = {
   maxFiles: 100,
   allowedOrigins: [
     "https://velimaq.vercel.app",
-    "https://appnufago.inacons.com.pe", 
+    "https://appnufago.inacons.com.pe",
     "https://kapo-gestion.vercel.app",
     "https://inacons.vercel.app",
     "https://kapo-informes.vercel.app",
@@ -33,9 +33,9 @@ const config = {
 
 const corsOptions = {
   origin: (origin: string | undefined, callback: any) => {
-    if (!origin || origin.startsWith("http://localhost:") || origin.startsWith("https://localhost:") || 
-        origin.startsWith("http://127.0.0.1:") || origin.startsWith("https://studio.apollographql.com") ||
-        config.allowedOrigins.includes(origin)) {
+    if (!origin || origin.startsWith("http://localhost:") || origin.startsWith("https://localhost:") ||
+      origin.startsWith("http://127.0.0.1:") || origin.startsWith("https://studio.apollographql.com") ||
+      config.allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error(`CORS: ${origin}`));
@@ -46,7 +46,7 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
 };
 
-export const createServer = (resolvers: any, typeDefs: any) => {
+export const createServer = (resolvers: any, typeDefs: any): { app: Application; httpServer: http.Server; apolloServer: ApolloServer } => {
   const app = express();
   app.use(cors(corsOptions));
   app.use(express.json({ limit: `${config.maxFileSize}mb` }));
@@ -54,10 +54,10 @@ export const createServer = (resolvers: any, typeDefs: any) => {
 
   // Configurar Health Check Service
   const healthCheckService = new HealthCheckService();
-  
+
   // Registrar health checks
   healthCheckService.register('database', new DatabaseHealthCheck());
-  
+
   // Endpoint de health check
   app.get('/health', async (_, res) => {
     try {
@@ -66,8 +66,8 @@ export const createServer = (resolvers: any, typeDefs: any) => {
       res.status(statusCode).json({
         ...result,
         uptime: process.uptime(),
-        config: { 
-          port: config.port, 
+        config: {
+          port: config.port,
           mode: configService.getDatabaseMode(),
           nodeEnv: configService.getNodeEnv()
         }
@@ -92,13 +92,13 @@ export const createServer = (resolvers: any, typeDefs: any) => {
     introspection: true,
     context: ({ req }) => ({ req, token: req.headers.authorization?.split(" ")[1] }),
     plugins: [ApolloServerPluginLandingPageGraphQLPlayground()],
-    formatError: (error) => { 
-      logger.error("GraphQL Error", { 
-        error: error.message, 
+    formatError: (error) => {
+      logger.error("GraphQL Error", {
+        error: error.message,
         extensions: error.extensions,
-        path: error.path 
-      }); 
-      return error.toJSON(); 
+        path: error.path
+      });
+      return error.toJSON();
     },
   });
 
@@ -107,23 +107,23 @@ export const createServer = (resolvers: any, typeDefs: any) => {
 
 export const startServer = async (app: Application, httpServer: http.Server, apolloServer: ApolloServer): Promise<void> => {
   await apolloServer.start();
-  
+
   app.use(graphqlUploadExpress({ maxFileSize: config.maxFileSize, maxFiles: config.maxFiles }));
   apolloServer.applyMiddleware({ app: app as any, path: "/graphql", cors: false });
 
-  logger.info(`Servidor iniciando`, { 
-    host: config.host, 
-    port: config.port, 
-    mode: configService.getDatabaseMode() 
+  logger.info(`Servidor iniciando`, {
+    host: config.host,
+    port: config.port,
+    mode: configService.getDatabaseMode()
   });
 
   httpServer.listen(config.port, config.host, () => {
-    logger.info(`GraphQL disponible`, { 
-      url: `http://${config.host}:${config.port}${apolloServer.graphqlPath}` 
+    logger.info(`GraphQL disponible`, {
+      url: `http://${config.host}:${config.port}${apolloServer.graphqlPath}`
     });
     if (process.env['NODE_ENV'] !== 'production') {
-      logger.info(`GraphQL Playground disponible`, { 
-        url: `http://localhost:${config.port}${apolloServer.graphqlPath}` 
+      logger.info(`GraphQL Playground disponible`, {
+        url: `http://localhost:${config.port}${apolloServer.graphqlPath}`
       });
     }
   });

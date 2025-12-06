@@ -23,6 +23,7 @@ input TituloCreateInput {
   tipo: TipoTitulo!
   orden: Int!
   total_parcial: Float
+  id_especialidad: String
   temp_id: String  # ID temporal del frontend para mapeo
 }
 
@@ -35,6 +36,7 @@ input TituloUpdateInput {
   tipo: TipoTitulo
   orden: Int
   total_parcial: Float
+  id_especialidad: String
 }
 
 input PartidaCreateInput {

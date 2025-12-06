@@ -22,7 +22,8 @@ export class TituloMongoRepository extends BaseMongoRepository<Titulo> implement
       docPlain.descripcion,
       docPlain.tipo,
       docPlain.orden,
-      docPlain.total_parcial || 0
+      docPlain.total_parcial || 0,
+      docPlain.id_especialidad || undefined // Manejar null/undefined correctamente
     );
   }
 
@@ -59,9 +60,29 @@ export class TituloMongoRepository extends BaseMongoRepository<Titulo> implement
   }
 
   override async update(id: string, data: Partial<Titulo>): Promise<Titulo | null> {
+    // Preparar el objeto de actualización
+    const updateData: any = { ...data };
+    
+    // Si id_especialidad es null explícitamente, usar $unset para eliminarlo del documento
+    // Si es undefined, no incluirlo en la actualización (no cambiar el valor actual)
+    if ('id_especialidad' in data) {
+      if (data.id_especialidad === null) {
+        // Si es null, eliminar el campo del documento
+        const updated = await this.model.findOneAndUpdate(
+          { id_titulo: id },
+          { $unset: { id_especialidad: '' } },
+          { new: true, runValidators: true }
+        );
+        return updated ? this.toDomain(updated) : null;
+      } else if (data.id_especialidad === undefined) {
+        // Si es undefined, no actualizar este campo
+        delete updateData.id_especialidad;
+      }
+    }
+    
     const updated = await this.model.findOneAndUpdate(
       { id_titulo: id },
-      { $set: data },
+      { $set: updateData },
       { new: true, runValidators: true }
     );
     return updated ? this.toDomain(updated) : null;

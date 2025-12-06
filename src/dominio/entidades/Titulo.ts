@@ -14,7 +14,8 @@ export class Titulo {
     public descripcion: string,
     public tipo: TipoTitulo,
     public orden: number,
-    public total_parcial: number
+    public total_parcial: number,
+    public id_especialidad?: string
   ) {}
   
   /**

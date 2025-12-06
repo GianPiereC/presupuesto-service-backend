@@ -2,7 +2,6 @@ import { Partida } from '../../dominio/entidades/Partida';
 import { IPartidaRepository } from '../../dominio/repositorios/IPartidaRepository';
 import { BaseService } from './BaseService';
 import { PartidaModel } from '../../infraestructura/persistencia/mongo/schemas/PartidaSchema';
-import { ValidationException } from '../../dominio/exceptions/DomainException';
 import { RecalculoTotalesService } from './RecalculoTotalesService';
 import { ApuService } from './ApuService';
 import { logger } from '../../infraestructura/logging';
@@ -58,14 +57,14 @@ export class PartidaService extends BaseService<Partida> {
       ...data,
       id_partida: idPartida
     };
-    
+
     // Calcular parcial si no existe
     if (partidaData.metrado !== undefined && partidaData.precio_unitario !== undefined) {
       partidaData.parcial_partida = (partidaData.metrado || 0) * (partidaData.precio_unitario || 0);
     }
-    
+
     const partidaCreada = await this.partidaRepository.create(partidaData);
-    
+
     // Recalcular totales del título después de crear la partida
     if (this.recalculoTotalesService && partidaCreada.id_titulo && partidaCreada.id_presupuesto) {
       try {
@@ -78,29 +77,29 @@ export class PartidaService extends BaseService<Partida> {
         // No lanzar error para no interrumpir la creación
       }
     }
-    
+
     return partidaCreada;
   }
 
   async actualizar(id_partida: string, data: Partial<Partida>): Promise<Partida | null> {
-    
+
     // Obtener partida actual antes de actualizar (para detectar cambio de título)
     const partidaActual = await this.obtenerPorId(id_partida);
     if (!partidaActual) return null;
-    
+
     const idTituloAnterior = partidaActual.id_titulo;
     const idTituloNuevo = data.id_titulo !== undefined ? data.id_titulo : idTituloAnterior;
     const cambioTitulo = idTituloAnterior !== idTituloNuevo;
-    
+
     // Recalcular parcial si se actualiza metrado o precio
     if (data.metrado !== undefined || data.precio_unitario !== undefined) {
-        const metrado = data.metrado !== undefined ? data.metrado : partidaActual.metrado;
-        const precio = data.precio_unitario !== undefined ? data.precio_unitario : partidaActual.precio_unitario;
-        data.parcial_partida = metrado * precio;
-      }
-    
+      const metrado = data.metrado !== undefined ? data.metrado : partidaActual.metrado;
+      const precio = data.precio_unitario !== undefined ? data.precio_unitario : partidaActual.precio_unitario;
+      data.parcial_partida = metrado * precio;
+    }
+
     const partidaActualizada = await this.partidaRepository.update(id_partida, data);
-    
+
     // Recalcular totales si cambió el título o se actualizó parcial
     if (this.recalculoTotalesService && partidaActualizada) {
       try {
@@ -111,7 +110,7 @@ export class PartidaService extends BaseService<Partida> {
             partidaActualizada.id_presupuesto
           );
         }
-        
+
         // Recalcular el título actual (nuevo o mismo)
         if (partidaActualizada.id_titulo && partidaActualizada.id_presupuesto) {
           await this.recalculoTotalesService.recalcularTotalesAscendentes(
@@ -124,7 +123,7 @@ export class PartidaService extends BaseService<Partida> {
         // No lanzar error para no interrumpir la actualización
       }
     }
-    
+
     return partidaActualizada;
   }
 
@@ -177,7 +176,7 @@ export class PartidaService extends BaseService<Partida> {
 
       // 3. Finalmente, eliminar la partida
       const deleted = await this.partidaRepository.delete(id_partida);
-      
+
       // 3. Recalcular totales del título después de eliminar
       if (deleted && this.recalculoTotalesService && idTitulo && idPresupuesto) {
         try {
@@ -190,7 +189,7 @@ export class PartidaService extends BaseService<Partida> {
           // No lanzar error para no interrumpir la eliminación
         }
       }
-      
+
       if (deleted) {
         return partida;
       }

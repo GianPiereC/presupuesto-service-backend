@@ -128,7 +128,7 @@ export class TituloResolver {
         createTitulo: async (_: any, args: any) => {
           return await ErrorHandler.handleError(
             async () => {
-              const titulo = await this.tituloService.crear({
+              const tituloData: any = {
                 id_presupuesto: args.id_presupuesto,
                 id_proyecto: args.id_proyecto,
                 id_titulo_padre: args.id_titulo_padre || null,
@@ -138,7 +138,14 @@ export class TituloResolver {
                 tipo: args.tipo,
                 orden: args.orden,
                 total_parcial: args.total_parcial || 0
-              });
+              };
+              
+              // Solo incluir id_especialidad si está definido (puede ser null para limpiar)
+              if (args.id_especialidad !== undefined) {
+                tituloData.id_especialidad = args.id_especialidad || null;
+              }
+              
+              const titulo = await this.tituloService.crear(tituloData);
               const tituloObj = titulo instanceof Titulo
                 ? Object.assign({}, titulo)
                 : titulo;
@@ -162,6 +169,10 @@ export class TituloResolver {
               if (args.tipo !== undefined) data.tipo = args.tipo;
               if (args.orden !== undefined) data.orden = args.orden;
               if (args.total_parcial !== undefined) data.total_parcial = args.total_parcial;
+              // Permitir establecer null para limpiar id_especialidad, o undefined para no cambiar
+              if (args.id_especialidad !== undefined) {
+                data.id_especialidad = args.id_especialidad || null;
+              }
 
               const titulo = await this.tituloService.actualizar(args.id_titulo, data);
               if (!titulo) return null;

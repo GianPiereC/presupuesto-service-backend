@@ -56,18 +56,18 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
    */
   async obtenerPendientesAgrupadas(): Promise<any[]> {
     const aprobaciones = await this.aprobacionRepository.obtenerPendientes();
-    
+
     // Agrupar por proyecto
     const proyectosMap = new Map<string, any>();
-    
+
     for (const aprobacion of aprobaciones) {
       const proyectoId = aprobacion.id_proyecto;
-      
+
       if (!proyectosMap.has(proyectoId)) {
         // Obtener datos del proyecto
         const proyecto = await this.proyectoService.obtenerPorId(proyectoId);
         if (!proyecto) continue;
-        
+
         proyectosMap.set(proyectoId, {
           proyecto: {
             id_proyecto: proyecto.id_proyecto,
@@ -82,47 +82,47 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
           gruposPresupuestos: []
         });
       }
-      
+
       const proyectoData = proyectosMap.get(proyectoId);
-      
+
       // Buscar si ya existe un grupo para este presupuesto
       let grupoExistente = proyectoData.gruposPresupuestos.find(
         (g: any) => g.id_grupo_version === aprobacion.id_grupo_version
       );
-      
+
       if (!grupoExistente) {
         // Obtener el presupuesto padre
         const presupuestoPadre = await this.presupuestoRepository.obtenerPorIdPresupuesto(aprobacion.id_presupuesto);
         if (!presupuestoPadre) continue;
-        
+
         // Obtener SOLO la versión específica que se seleccionó para aprobar
         // La versión está guardada en aprobacion.version_presupuesto
         if (!aprobacion.version_presupuesto) {
           console.warn(`Aprobación ${aprobacion.id_aprobacion} no tiene version_presupuesto especificada`);
           continue;
         }
-        
+
         // Determinar la fase según el tipo de aprobación
         let faseBusqueda = 'LICITACION';
-        if (aprobacion.tipo_aprobacion === 'CONTRACTUAL_A_META' || 
-            aprobacion.tipo_aprobacion === 'NUEVA_VERSION_META' ||
-            aprobacion.tipo_aprobacion === 'OFICIALIZAR_META') {
+        if (aprobacion.tipo_aprobacion === 'CONTRACTUAL_A_META' ||
+          aprobacion.tipo_aprobacion === 'NUEVA_VERSION_META' ||
+          aprobacion.tipo_aprobacion === 'OFICIALIZAR_META') {
           faseBusqueda = 'META';
         } else if (aprobacion.tipo_aprobacion === 'LICITACION_A_CONTRACTUAL') {
           faseBusqueda = 'LICITACION';
         }
-        
+
         const versionSeleccionada = await PresupuestoModel.findOne({
           id_grupo_version: aprobacion.id_grupo_version,
           fase: faseBusqueda,
           version: aprobacion.version_presupuesto
         }).lean();
-        
+
         if (!versionSeleccionada) {
           console.warn(`No se encontró la versión ${aprobacion.version_presupuesto} del grupo ${aprobacion.id_grupo_version}`);
           continue;
         }
-        
+
         grupoExistente = {
           id_aprobacion: aprobacion.id_aprobacion, // Incluir id_aprobacion para poder aprobar/rechazar
           id_grupo_version: aprobacion.id_grupo_version,
@@ -142,11 +142,11 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
           }], // Solo la versión seleccionada
           tipoAprobacion: aprobacion.tipo_aprobacion
         };
-        
+
         proyectoData.gruposPresupuestos.push(grupoExistente);
       }
     }
-    
+
     return Array.from(proyectosMap.values());
   }
 
@@ -156,7 +156,7 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
 
   async aprobar(id_aprobacion: string, usuario_aprobador_id: string, comentario?: string): Promise<AprobacionPresupuesto> {
     const aprobacion = await this.aprobacionRepository.obtenerPorId(id_aprobacion);
-    
+
     if (!aprobacion) {
       throw new Error('Aprobación no encontrada');
     }
@@ -198,7 +198,7 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
         aprobacion.comentario_solicitud || undefined
       );
     }
-    
+
     // Si es aprobación de META (versión borrador → aprobada)
     if (aprobacion.tipo_aprobacion === 'CONTRACTUAL_A_META' && aprobacion.version_presupuesto) {
       // Buscar la versión META borrador que se está aprobando
@@ -305,7 +305,7 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
       // Actualizar el presupuesto padre con la referencia a la versión vigente
       await this.presupuestoRepository.update(aprobacion.id_presupuesto, {
         id_presupuesto_meta_vigente: versionMeta.id_presupuesto,
-        version_meta_vigente: versionMeta.version
+        version_meta_vigente: versionMeta.version ?? undefined
       });
 
       console.log(`[AprobacionPresupuestoService] Versión META oficializada (puesta en vigencia): ${versionMeta.id_presupuesto} (V${aprobacion.version_presupuesto})`);
@@ -324,9 +324,9 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
     }
 
     // Limpiar estado_aprobacion del presupuesto padre (solo si no es aprobación de versión META)
-    if (aprobacion.tipo_aprobacion !== 'CONTRACTUAL_A_META' && 
-        aprobacion.tipo_aprobacion !== 'NUEVA_VERSION_META' || 
-        !aprobacion.version_presupuesto) {
+    if (aprobacion.tipo_aprobacion !== 'CONTRACTUAL_A_META' &&
+      aprobacion.tipo_aprobacion !== 'NUEVA_VERSION_META' ||
+      !aprobacion.version_presupuesto) {
       await this.presupuestoRepository.update(aprobacion.id_presupuesto, {
         estado_aprobacion: undefined,
         estado: 'aprobado'
@@ -338,7 +338,7 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
 
   async rechazar(id_aprobacion: string, usuario_aprobador_id: string, comentario: string): Promise<AprobacionPresupuesto> {
     const aprobacion = await this.aprobacionRepository.obtenerPorId(id_aprobacion);
-    
+
     if (!aprobacion) {
       throw new Error('Aprobación no encontrada');
     }

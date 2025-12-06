@@ -1,0 +1,30 @@
+type Especialidad {
+  _id: ID!
+  id_especialidad: String!
+  nombre: String!
+  descripcion: String!
+}
+
+extend type Query {
+  listEspecialidades: [Especialidad!]!
+  getEspecialidad(id_especialidad: String!): Especialidad
+}
+
+extend type Mutation {
+  addEspecialidad(
+    nombre: String!
+    descripcion: String!
+  ): Especialidad!
+
+  updateEspecialidad(
+    id_especialidad: String!
+    nombre: String
+    descripcion: String
+  ): Especialidad
+
+  deleteEspecialidad(id_especialidad: String!): Especialidad
+}
+
+
+
+

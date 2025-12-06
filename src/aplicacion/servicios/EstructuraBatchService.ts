@@ -20,6 +20,7 @@ export interface TituloCreateInput {
   tipo: 'TITULO' | 'SUBTITULO';
   orden: number;
   total_parcial?: number;
+  id_especialidad?: string | null;
   temp_id?: string;
 }
 
@@ -32,6 +33,7 @@ export interface TituloUpdateInput {
   tipo?: 'TITULO' | 'SUBTITULO';
   orden?: number;
   total_parcial?: number;
+  id_especialidad?: string | null;
 }
 
 export interface PartidaCreateInput {
@@ -108,7 +110,8 @@ export class EstructuraBatchService {
       docPlain.descripcion,
       docPlain.tipo,
       docPlain.orden,
-      docPlain.total_parcial || 0
+      docPlain.total_parcial || 0,
+      docPlain.id_especialidad
     );
   }
 
@@ -215,6 +218,7 @@ export class EstructuraBatchService {
               tipo: tituloInput.tipo,
               orden: tituloInput.orden,
               total_parcial: tituloInput.total_parcial || 0,
+              id_especialidad: tituloInput.id_especialidad ? tituloInput.id_especialidad : undefined,
             };
 
             // Validar unicidad de numero_item por proyecto
@@ -302,6 +306,10 @@ export class EstructuraBatchService {
         if (tituloInput.numero_item !== undefined) cambios.numero_item = tituloInput.numero_item;
         if (tituloInput.tipo !== undefined) cambios.tipo = tituloInput.tipo;
         if (tituloInput.total_parcial !== undefined) cambios.total_parcial = tituloInput.total_parcial;
+        if (tituloInput.id_especialidad !== undefined) {
+          // Permitir null para limpiar id_especialidad, o el valor si está definido
+          cambios.id_especialidad = tituloInput.id_especialidad || undefined;
+        }
 
         // Validar unicidad de numero_item por proyecto si se está actualizando
         if (tituloInput.numero_item !== undefined) {
@@ -670,6 +678,10 @@ export class EstructuraBatchService {
         if (tituloInput.numero_item !== undefined) cambios.numero_item = tituloInput.numero_item;
         if (tituloInput.tipo !== undefined) cambios.tipo = tituloInput.tipo;
         if (tituloInput.total_parcial !== undefined) cambios.total_parcial = tituloInput.total_parcial;
+        if (tituloInput.id_especialidad !== undefined) {
+          // Permitir null para limpiar id_especialidad, o el valor si está definido
+          cambios.id_especialidad = tituloInput.id_especialidad || undefined;
+        }
 
         if (Object.keys(cambios).length > 0) {
           const tituloDoc = await TituloModel.findOneAndUpdate(

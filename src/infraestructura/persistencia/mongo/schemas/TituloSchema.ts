@@ -11,6 +11,7 @@ export interface TituloDocument extends Document {
   tipo: 'TITULO' | 'SUBTITULO';
   orden: number;
   total_parcial: number;
+  id_especialidad?: string;
 }
 
 interface TituloModel extends Model<TituloDocument> {
@@ -31,7 +32,8 @@ const TituloSchema = new Schema<TituloDocument>({
     required: true 
   },
   orden: { type: Number, required: true },
-  total_parcial: { type: Number, default: 0 }
+  total_parcial: { type: Number, default: 0 },
+  id_especialidad: { type: String }
 }, {
   collection: 'titulo',
   timestamps: false
@@ -43,6 +45,7 @@ TituloSchema.index({ id_proyecto: 1 });
 TituloSchema.index({ id_titulo_padre: 1 });
 TituloSchema.index({ id_presupuesto: 1, orden: 1 });
 TituloSchema.index({ id_presupuesto: 1, id_titulo_padre: 1 });
+TituloSchema.index({ id_especialidad: 1 });
 // Índice compuesto único: numero_item debe ser único por presupuesto (permite mismo numero_item en diferentes versiones)
 TituloSchema.index({ numero_item: 1, id_proyecto: 1, id_presupuesto: 1 }, { unique: true });
 

@@ -26,6 +26,7 @@ import { RecursoResolver } from './RecursoResolver';
 import { PrecioRecursoPresupuestoResolver } from './PrecioRecursoPresupuestoResolver';
 import { ApuResolver } from './ApuResolver';
 import { AprobacionPresupuestoResolver } from './AprobacionPresupuestoResolver';
+import { EspecialidadResolver } from './EspecialidadResolver';
 
 // Importar servicios
 import { AuthService } from '../../../aplicacion/servicios/AuthService';
@@ -48,6 +49,7 @@ import { RecursoService } from '../../../aplicacion/servicios/RecursoService';
 import { PrecioRecursoPresupuestoService } from '../../../aplicacion/servicios/PrecioRecursoPresupuestoService';
 import { ApuService } from '../../../aplicacion/servicios/ApuService';
 import { RecalculoTotalesService } from '../../../aplicacion/servicios/RecalculoTotalesService';
+import { EspecialidadService } from '../../../aplicacion/servicios/EspecialidadService';
 
 // Importar repositorios HTTP
 import { HttpAuthRepository } from '../../persistencia/http/HttpAuthRepository';
@@ -67,6 +69,7 @@ import { PartidaMongoRepository } from '../../persistencia/mongo/PartidaMongoRep
 import { PrecioRecursoPresupuestoMongoRepository } from '../../persistencia/mongo/PrecioRecursoPresupuestoMongoRepository';
 import { ApuMongoRepository } from '../../persistencia/mongo/ApuMongoRepository';
 import { AprobacionPresupuestoMongoRepository } from '../../persistencia/mongo/AprobacionPresupuestoMongoRepository';
+import { EspecialidadMongoRepository } from '../../persistencia/mongo/EspecialidadMongoRepository';
 
 // Importar Container para DI
 import { Container } from '../../di/Container';
@@ -237,6 +240,9 @@ export class ResolverFactory {
     // Registrar PartidaMongoRepository
     container.register('PartidaMongoRepository', () => new PartidaMongoRepository(), true);
 
+    // Registrar EspecialidadMongoRepository
+    container.register('EspecialidadMongoRepository', () => new EspecialidadMongoRepository(), true);
+
     // ========================================================================
     // REGISTRO DE SERVICIOS DE PRESUPUESTOS
     // ========================================================================
@@ -338,6 +344,12 @@ export class ResolverFactory {
       return new ApuService(apuRepo, precioService, partidaService, recalculoTotalesService);
     }, true);
 
+    // Registrar EspecialidadService
+    container.register('EspecialidadService', (c) => {
+      const especialidadRepo = c.resolve<EspecialidadMongoRepository>('EspecialidadMongoRepository');
+      return new EspecialidadService(especialidadRepo);
+    }, true);
+
     // Resolver dependencias circulares: inyectar servicios en TituloService y PartidaService
     const recalculoTotalesService = container.resolve<RecalculoTotalesService>('RecalculoTotalesService');
     const apuService = container.resolve<ApuService>('ApuService');
@@ -408,6 +420,12 @@ export class ResolverFactory {
       const apuService = c.resolve<ApuService>('ApuService');
       const precioRecursoPresupuestoService = c.resolve<PrecioRecursoPresupuestoService>('PrecioRecursoPresupuestoService');
       return new ApuResolver(apuService, precioRecursoPresupuestoService);
+    }, true);
+
+    // Registrar EspecialidadResolver
+    container.register('EspecialidadResolver', (c) => {
+      const especialidadService = c.resolve<EspecialidadService>('EspecialidadService');
+      return new EspecialidadResolver(especialidadService);
     }, true);
 
     logger.info('Container inicializado con dependencias de autenticación, empresa, ubicación, infraestructura, recursos y presupuestos');
@@ -507,6 +525,11 @@ export class ResolverFactory {
       const apuResolver = container.resolve<ApuResolver>('ApuResolver');
       resolvers.push(apuResolver.getResolvers());
       logger.debug('Resolver configurado: apu');
+
+      // Crear EspecialidadResolver
+      const especialidadResolver = container.resolve<EspecialidadResolver>('EspecialidadResolver');
+      resolvers.push(especialidadResolver.getResolvers());
+      logger.debug('Resolver configurado: especialidad');
     } catch (error) {
       logger.error('Error configurando resolvers', { 
         error: error instanceof Error ? error.message : String(error) 
