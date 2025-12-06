@@ -130,15 +130,15 @@ export class ConfigService {
    */
   getDatabaseUrl(): string {
     const mode = this.getDatabaseMode();
-    
+
     if (mode === 'local') {
       return this.getRequired('DATABASE_URL_LOCAL');
     }
-    
+
     if (mode === 'produccion') {
       return this.getRequired('DATABASE_URL');
     }
-    
+
     // Default: dev
     return this.getRequired('DATABASE_URL_DEV');
   }
@@ -207,13 +207,17 @@ export class ConfigService {
    * Validar configuración requerida
    */
   validate(): void {
-    const required = ['DATABASE_URL_DEV'];
     const mode = this.getDatabaseMode();
-    
+    const required: string[] = [];
+
+    // Solo requerir la URL de base de datos correspondiente al modo actual
     if (mode === 'local') {
       required.push('DATABASE_URL_LOCAL');
     } else if (mode === 'produccion') {
       required.push('DATABASE_URL');
+    } else {
+      // modo 'dev' por defecto
+      required.push('DATABASE_URL_DEV');
     }
 
     const missing: string[] = [];
