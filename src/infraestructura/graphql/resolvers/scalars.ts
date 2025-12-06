@@ -1,6 +1,4 @@
 import { GraphQLScalarType, Kind } from 'graphql';
-// @ts-expect-error - graphql-upload no tiene tipos para .mjs
-import GraphQLUpload from 'graphql-upload/GraphQLUpload.mjs';
 
 // Resolver para el tipo DateTime
 export const DateTimeResolver = new GraphQLScalarType({
@@ -66,9 +64,26 @@ export const JSONResolver = new GraphQLScalarType({
   },
 });
 
+// Crear una función async que cargue GraphQLUpload dinámicamente
+let GraphQLUpload: any;
+const getGraphQLUpload = async () => {
+  if (!GraphQLUpload) {
+    // @ts-expect-error - dynamic import de ES Module
+    const module = await import('graphql-upload/GraphQLUpload.js');
+    GraphQLUpload = module.default;
+  }
+  return GraphQLUpload;
+};
+
+// Inicializar el Upload en tiempo de carga
+getGraphQLUpload();
+
 export const scalarResolvers = {
   DateTime: DateTimeResolver,
   JSON: JSONResolver,
-  Upload: GraphQLUpload,
+  // Usar el GraphQLUpload que se cargó dinámicamente
+  get Upload() {
+    return GraphQLUpload;
+  },
 };
 

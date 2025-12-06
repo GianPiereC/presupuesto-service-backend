@@ -1,7 +1,5 @@
 import express, { Application } from 'express';
 import { ApolloServer } from 'apollo-server-express';
-// @ts-expect-error - graphql-upload no tiene tipos para .mjs
-import graphqlUploadExpress from 'graphql-upload/graphqlUploadExpress.mjs';
 import { ApolloServerPluginLandingPageGraphQLPlayground } from 'apollo-server-core';
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import cors from 'cors';
@@ -108,6 +106,9 @@ export const createServer = (resolvers: any, typeDefs: any): { app: Application;
 export const startServer = async (app: Application, httpServer: http.Server, apolloServer: ApolloServer): Promise<void> => {
   await apolloServer.start();
 
+  // Usar dynamic import para el middleware ES Module
+  // @ts-expect-error - dynamic import de ES Module .js
+  const { default: graphqlUploadExpress } = await import('graphql-upload/graphqlUploadExpress.js');
   app.use(graphqlUploadExpress({ maxFileSize: config.maxFileSize, maxFiles: config.maxFiles }));
   apolloServer.applyMiddleware({ app: app as any, path: "/graphql", cors: false });
 
