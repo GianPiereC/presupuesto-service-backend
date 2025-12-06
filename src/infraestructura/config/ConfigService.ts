@@ -222,6 +222,7 @@ export class ConfigService {
       'https://kapo-informes.vercel.app',
       'https://kapo-operaciones.vercel.app',
       'https://kapo-tareo-bakend-production.up.railway.app',
+      'https://presupuesto-service-backend-production.up.railway.app',
     ];
   }
 
