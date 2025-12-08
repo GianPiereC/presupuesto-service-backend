@@ -185,6 +185,19 @@ export class EstructuraBatchService {
       const mapeoIdsPartidas: Map<string, string> = new Map();
 
       // 1. Crear títulos (en orden: primero padres, luego hijos)
+      // Obtener el último ID una vez para generar IDs secuenciales sin condición de carrera
+      let ultimoIdTituloNumero = 0;
+      if (input.titulosCrear.length > 0) {
+        const ultimoTitulo = await TituloModel.findOne({}, { id_titulo: 1 })
+          .sort({ id_titulo: -1 })
+          .lean()
+          .session(session);
+        
+        if (ultimoTitulo) {
+          ultimoIdTituloNumero = parseInt(ultimoTitulo.id_titulo.replace('TIT', '')) || 0;
+        }
+      }
+
       const titulosParaCrear = [...input.titulosCrear];
       const titulosCreados = new Set<string>();
 
@@ -206,7 +219,10 @@ export class EstructuraBatchService {
               ? mapeoIdsTitulos.get(idPadre)!
               : idPadre;
 
-            const idTitulo = await TituloModel.generateNextId();
+            // Generar ID secuencial localmente para evitar condición de carrera
+            ultimoIdTituloNumero++;
+            const idTitulo = `TIT${ultimoIdTituloNumero.toString().padStart(10, '0')}`;
+            
             const tituloData: Partial<Titulo> & { id_titulo: string } = {
               id_titulo: idTitulo,
               id_presupuesto: tituloInput.id_presupuesto,
@@ -256,13 +272,29 @@ export class EstructuraBatchService {
       }
 
       // 2. Crear partidas (actualizar referencias a títulos nuevos)
+      // Obtener el último ID una vez para generar IDs secuenciales sin condición de carrera
+      let ultimoIdPartidaNumero = 0;
+      if (input.partidasCrear.length > 0) {
+        const ultimaPartida = await PartidaModel.findOne({}, { id_partida: 1 })
+          .sort({ id_partida: -1 })
+          .lean()
+          .session(session);
+        
+        if (ultimaPartida) {
+          ultimoIdPartidaNumero = parseInt(ultimaPartida.id_partida.replace('PAR', '')) || 0;
+        }
+      }
+
       for (const partidaInput of input.partidasCrear) {
         let idTituloReal = partidaInput.id_titulo;
         if (mapeoIdsTitulos.has(partidaInput.id_titulo)) {
           idTituloReal = mapeoIdsTitulos.get(partidaInput.id_titulo)!;
         }
 
-        const idPartida = await PartidaModel.generateNextId();
+        // Generar ID secuencial localmente para evitar condición de carrera
+        ultimoIdPartidaNumero++;
+        const idPartida = `PAR${ultimoIdPartidaNumero.toString().padStart(10, '0')}`;
+        
         const partidaData: Partial<Partida> & { id_partida: string } = {
           id_partida: idPartida,
           id_presupuesto: partidaInput.id_presupuesto,
@@ -554,6 +586,18 @@ export class EstructuraBatchService {
       const mapeoIdsPartidas: Map<string, string> = new Map();
 
       // 1. Crear títulos (en orden: primero padres, luego hijos)
+      // Obtener el último ID una vez para generar IDs secuenciales sin condición de carrera
+      let ultimoIdTituloNumeroSinTrans = 0;
+      if (input.titulosCrear.length > 0) {
+        const ultimoTitulo = await TituloModel.findOne({}, { id_titulo: 1 })
+          .sort({ id_titulo: -1 })
+          .lean();
+        
+        if (ultimoTitulo) {
+          ultimoIdTituloNumeroSinTrans = parseInt(ultimoTitulo.id_titulo.replace('TIT', '')) || 0;
+        }
+      }
+
       const titulosParaCrear = [...input.titulosCrear];
       const titulosCreados = new Set<string>();
 
@@ -574,7 +618,10 @@ export class EstructuraBatchService {
               ? mapeoIdsTitulos.get(idPadre)!
               : idPadre;
 
-            const idTitulo = await TituloModel.generateNextId();
+            // Generar ID secuencial localmente para evitar condición de carrera
+            ultimoIdTituloNumeroSinTrans++;
+            const idTitulo = `TIT${ultimoIdTituloNumeroSinTrans.toString().padStart(10, '0')}`;
+            
             const tituloData: Partial<Titulo> & { id_titulo: string } = {
               id_titulo: idTitulo,
               id_presupuesto: tituloInput.id_presupuesto,
@@ -614,13 +661,28 @@ export class EstructuraBatchService {
       }
 
       // 2. Crear partidas
+      // Obtener el último ID una vez para generar IDs secuenciales sin condición de carrera
+      let ultimoIdPartidaNumeroSinTrans = 0;
+      if (input.partidasCrear.length > 0) {
+        const ultimaPartida = await PartidaModel.findOne({}, { id_partida: 1 })
+          .sort({ id_partida: -1 })
+          .lean();
+        
+        if (ultimaPartida) {
+          ultimoIdPartidaNumeroSinTrans = parseInt(ultimaPartida.id_partida.replace('PAR', '')) || 0;
+        }
+      }
+
       for (const partidaInput of input.partidasCrear) {
         let idTituloReal = partidaInput.id_titulo;
         if (mapeoIdsTitulos.has(partidaInput.id_titulo)) {
           idTituloReal = mapeoIdsTitulos.get(partidaInput.id_titulo)!;
         }
 
-        const idPartida = await PartidaModel.generateNextId();
+        // Generar ID secuencial localmente para evitar condición de carrera
+        ultimoIdPartidaNumeroSinTrans++;
+        const idPartida = `PAR${ultimoIdPartidaNumeroSinTrans.toString().padStart(10, '0')}`;
+        
         const partidaData: Partial<Partida> & { id_partida: string } = {
           id_partida: idPartida,
           id_presupuesto: partidaInput.id_presupuesto,
