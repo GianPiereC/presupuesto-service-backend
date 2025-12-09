@@ -1,12 +1,21 @@
-# Estructura completa del presupuesto con títulos y partidas (arrays planos)
+# Tipo para precio compartido simplificado (solo lo necesario para cálculos)
+type PrecioCompartido {
+  id_precio_recurso: String!
+  recurso_id: String!
+  precio: Float!
+}
+
+# Estructura completa del presupuesto con títulos, partidas y APUs (arrays planos)
 type EstructuraPresupuesto {
   presupuesto: Presupuesto!
   titulos: [Titulo!]!
   partidas: [Partida!]!
+  apus: [Apu!]! # NUEVO: APUs completos para cálculos en frontend
+  precios_compartidos: [PrecioCompartido!]! # NUEVO: Precios compartidos para cálculos en frontend
 }
 
 extend type Query {
-  # Obtener estructura completa del presupuesto (títulos y partidas como arrays planos)
+  # Obtener estructura completa del presupuesto (títulos, partidas y APUs como arrays planos)
   getEstructuraPresupuesto(id_presupuesto: String!): EstructuraPresupuesto
 }
 

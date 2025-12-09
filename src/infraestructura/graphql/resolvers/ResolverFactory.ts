@@ -308,7 +308,8 @@ export class ResolverFactory {
       const presupuestoService = c.resolve<PresupuestoService>('PresupuestoService');
       const tituloService = c.resolve<TituloService>('TituloService');
       const partidaService = c.resolve<PartidaService>('PartidaService');
-      return new EstructuraPresupuestoService(presupuestoService, tituloService, partidaService);
+      const apuService = c.resolve<ApuService>('ApuService');
+      return new EstructuraPresupuestoService(presupuestoService, tituloService, partidaService, apuService);
     }, true);
 
     // Registrar EstructuraBatchService
@@ -340,8 +341,7 @@ export class ResolverFactory {
       const apuRepo = c.resolve<ApuMongoRepository>('ApuMongoRepository');
       const precioService = c.resolve<PrecioRecursoPresupuestoService>('PrecioRecursoPresupuestoService');
       const partidaService = c.resolve<PartidaService>('PartidaService');
-      const recalculoTotalesService = c.resolve<RecalculoTotalesService>('RecalculoTotalesService');
-      return new ApuService(apuRepo, precioService, partidaService, recalculoTotalesService);
+      return new ApuService(apuRepo, precioService, partidaService);
     }, true);
 
     // Registrar EspecialidadService
@@ -376,7 +376,8 @@ export class ResolverFactory {
       const presupuestoService = c.resolve<PresupuestoService>('PresupuestoService');
       const versionadoPresupuestoService = c.resolve<VersionadoPresupuestoService>('VersionadoPresupuestoService');
       const estructuraPresupuestoService = c.resolve<EstructuraPresupuestoService>('EstructuraPresupuestoService');
-      return new PresupuestoResolver(presupuestoService, versionadoPresupuestoService, estructuraPresupuestoService);
+      const precioRecursoPresupuestoService = c.resolve<PrecioRecursoPresupuestoService>('PrecioRecursoPresupuestoService');
+      return new PresupuestoResolver(presupuestoService, versionadoPresupuestoService, estructuraPresupuestoService, precioRecursoPresupuestoService);
     }, true);
 
     // Registrar ProyectoResolver

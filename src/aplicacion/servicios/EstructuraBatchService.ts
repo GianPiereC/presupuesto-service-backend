@@ -163,7 +163,13 @@ export class EstructuraBatchService {
    * Ejecuta batch con transacciones de MongoDB
    */
   private async ejecutarBatchConTransaccion(input: BatchEstructuraInput): Promise<BatchEstructuraResponse> {
+    const tiempoInicio = Date.now();
+    console.log('[BACKEND] 🚀 Iniciando batch con transacción...');
+    console.log(`[BACKEND] 📊 Input: ${input.titulosCrear.length} títulos crear, ${input.partidasCrear.length} partidas crear, ${input.titulosActualizar.length} títulos actualizar, ${input.partidasActualizar.length} partidas actualizar, ${input.titulosEliminar.length} títulos eliminar, ${input.partidasEliminar.length} partidas eliminar`);
+    
     const session = await mongoose.startSession();
+    const tiempoSesion = Date.now() - tiempoInicio;
+    console.log(`[BACKEND] ⏱️ Creación de sesión: ${tiempoSesion}ms`);
     
     const resultado: BatchEstructuraResponse = {
       success: false,
@@ -179,19 +185,24 @@ export class EstructuraBatchService {
     const partidasAEliminarInfo: Array<{ id_partida: string; id_titulo: string; id_presupuesto: string }> = [];
 
     try {
+      const tiempoTransaccionInicio = Date.now();
       await session.withTransaction(async () => {
       // Mapeo de IDs temporales a IDs reales
       const mapeoIdsTitulos: Map<string, string> = new Map();
       const mapeoIdsPartidas: Map<string, string> = new Map();
 
       // 1. Crear títulos (en orden: primero padres, luego hijos)
+      const tiempoCrearTitulosInicio = Date.now();
       // Obtener el último ID una vez para generar IDs secuenciales sin condición de carrera
       let ultimoIdTituloNumero = 0;
       if (input.titulosCrear.length > 0) {
+        const tiempoUltimoIdInicio = Date.now();
         const ultimoTitulo = await TituloModel.findOne({}, { id_titulo: 1 })
           .sort({ id_titulo: -1 })
           .lean()
           .session(session);
+        const tiempoUltimoId = Date.now() - tiempoUltimoIdInicio;
+        console.log(`[BACKEND] ⏱️ Obtener último ID título: ${tiempoUltimoId}ms`);
         
         if (ultimoTitulo) {
           ultimoIdTituloNumero = parseInt(ultimoTitulo.id_titulo.replace('TIT', '')) || 0;
@@ -229,7 +240,7 @@ export class EstructuraBatchService {
               id_proyecto: tituloInput.id_proyecto,
               id_titulo_padre: idPadreReal || null,
               nivel: tituloInput.nivel,
-              numero_item: tituloInput.numero_item,
+              numero_item: tituloInput.numero_item || '', // Se calcula dinámicamente en frontend, pero requerido en BD
               descripcion: tituloInput.descripcion,
               tipo: tituloInput.tipo,
               orden: tituloInput.orden,
@@ -270,8 +281,11 @@ export class EstructuraBatchService {
           throw new Error('Error: No se pueden crear algunos títulos debido a referencias circulares');
         }
       }
+      const tiempoCrearTitulosTotal = Date.now() - tiempoCrearTitulosInicio;
+      console.log(`[BACKEND] ⏱️ Crear ${resultado.titulosCreados.length} títulos: ${tiempoCrearTitulosTotal}ms`);
 
       // 2. Crear partidas (actualizar referencias a títulos nuevos)
+      const tiempoCrearPartidasInicio = Date.now();
       // Obtener el último ID una vez para generar IDs secuenciales sin condición de carrera
       let ultimoIdPartidaNumero = 0;
       if (input.partidasCrear.length > 0) {
@@ -322,9 +336,14 @@ export class EstructuraBatchService {
         
         resultado.partidasCreadas.push(nuevaPartida);
       }
+      const tiempoCrearPartidasTotal = Date.now() - tiempoCrearPartidasInicio;
+      console.log(`[BACKEND] ⏱️ Crear ${resultado.partidasCreadas.length} partidas: ${tiempoCrearPartidasTotal}ms`);
 
       // 3. Actualizar títulos
+      const tiempoActualizarTitulosInicio = Date.now();
+      let tiempoUpdates = 0;
       for (const tituloInput of input.titulosActualizar) {
+        const tiempoTituloInicio = Date.now();
         const cambios: Partial<Titulo> = {};
         if (tituloInput.descripcion !== undefined) cambios.descripcion = tituloInput.descripcion;
         if (tituloInput.id_titulo_padre !== undefined) {
@@ -335,7 +354,7 @@ export class EstructuraBatchService {
         }
         if (tituloInput.orden !== undefined) cambios.orden = tituloInput.orden;
         if (tituloInput.nivel !== undefined) cambios.nivel = tituloInput.nivel;
-        if (tituloInput.numero_item !== undefined) cambios.numero_item = tituloInput.numero_item;
+        // numero_item NO se actualiza - se calcula dinámicamente en frontend
         if (tituloInput.tipo !== undefined) cambios.tipo = tituloInput.tipo;
         if (tituloInput.total_parcial !== undefined) cambios.total_parcial = tituloInput.total_parcial;
         if (tituloInput.id_especialidad !== undefined) {
@@ -343,41 +362,36 @@ export class EstructuraBatchService {
           cambios.id_especialidad = tituloInput.id_especialidad || undefined;
         }
 
-        // Validar unicidad de numero_item por proyecto si se está actualizando
-        if (tituloInput.numero_item !== undefined) {
-          const tituloActual = await TituloModel.findOne({ id_titulo: tituloInput.id_titulo }).session(session);
-          if (tituloActual) {
-            const id_proyecto = tituloActual.id_proyecto;
-            const existente = await TituloModel.findOne({
-              numero_item: tituloInput.numero_item,
-              id_proyecto: id_proyecto,
-              id_titulo: { $ne: tituloInput.id_titulo }
-            }).session(session);
-            if (existente) {
-              throw new ValidationException(
-                `Ya existe otro título con el número de item "${tituloInput.numero_item}" en este proyecto`,
-                'numero_item'
-              );
-            }
-          }
-        }
+        // ⚠️ Validación de numero_item ELIMINADA - se calcula dinámicamente en frontend
+        // Ya no validamos ni actualizamos numero_item porque se calcula basado en orden/nivel/padre
 
         if (Object.keys(cambios).length > 0) {
           // Actualizar usando el modelo directamente con la sesión
+          const tiempoUpdateInicio = Date.now();
           const tituloDoc = await TituloModel.findOneAndUpdate(
             { id_titulo: tituloInput.id_titulo },
             { $set: cambios },
             { new: true, session }
           );
+          tiempoUpdates += Date.now() - tiempoUpdateInicio;
           if (tituloDoc) {
             const tituloActualizado = this.toDomainTitulo(tituloDoc);
             resultado.titulosActualizados.push(tituloActualizado);
           }
         }
+        const tiempoTitulo = Date.now() - tiempoTituloInicio;
+        if (tiempoTitulo > 200) {
+          console.log(`[BACKEND] ⚠️ Actualizar título ${tituloInput.id_titulo} tomó ${tiempoTitulo}ms`);
+        }
       }
+      const tiempoActualizarTitulosTotal = Date.now() - tiempoActualizarTitulosInicio;
+      console.log(`[BACKEND] ⏱️ Actualizar ${resultado.titulosActualizados.length} títulos: ${tiempoActualizarTitulosTotal}ms (updates: ${tiempoUpdates}ms)`);
 
       // 4. Actualizar partidas
+      const tiempoActualizarPartidasInicio = Date.now();
+      let tiempoUpdatesPartidas = 0;
       for (const partidaInput of input.partidasActualizar) {
+        const tiempoPartidaInicio = Date.now();
         const cambios: Partial<Partida> = {};
         if (partidaInput.descripcion !== undefined) cambios.descripcion = partidaInput.descripcion;
         if (partidaInput.id_titulo !== undefined) {
@@ -392,25 +406,34 @@ export class EstructuraBatchService {
         if (partidaInput.precio_unitario !== undefined) cambios.precio_unitario = partidaInput.precio_unitario;
         if (partidaInput.unidad_medida !== undefined) cambios.unidad_medida = partidaInput.unidad_medida;
         if (partidaInput.nivel_partida !== undefined) cambios.nivel_partida = partidaInput.nivel_partida;
-        if (partidaInput.numero_item !== undefined) cambios.numero_item = partidaInput.numero_item;
+        // numero_item NO se actualiza - se calcula dinámicamente en frontend
         if (partidaInput.estado !== undefined) cambios.estado = partidaInput.estado;
         if (partidaInput.parcial_partida !== undefined) cambios.parcial_partida = partidaInput.parcial_partida;
 
         if (Object.keys(cambios).length > 0) {
           // Actualizar usando el modelo directamente con la sesión
+          const tiempoUpdateInicio = Date.now();
           const partidaDoc = await PartidaModel.findOneAndUpdate(
             { id_partida: partidaInput.id_partida },
             { $set: cambios },
             { new: true, session }
           );
+          tiempoUpdatesPartidas += Date.now() - tiempoUpdateInicio;
           if (partidaDoc) {
             const partidaActualizada = this.toDomainPartida(partidaDoc);
             resultado.partidasActualizadas.push(partidaActualizada);
           }
         }
+        const tiempoPartida = Date.now() - tiempoPartidaInicio;
+        if (tiempoPartida > 200) {
+          console.log(`[BACKEND] ⚠️ Actualizar partida ${partidaInput.id_partida} tomó ${tiempoPartida}ms`);
+        }
       }
+      const tiempoActualizarPartidasTotal = Date.now() - tiempoActualizarPartidasInicio;
+      console.log(`[BACKEND] ⏱️ Actualizar ${resultado.partidasActualizadas.length} partidas: ${tiempoActualizarPartidasTotal}ms (updates: ${tiempoUpdatesPartidas}ms)`);
 
       // 5. Obtener información de títulos antes de eliminar (para recalcular después)
+      const tiempoEliminarInicio = Date.now();
       titulosAEliminarInfo.length = 0;
       for (const id_titulo of input.titulosEliminar) {
         const titulo = await TituloModel.findOne({ id_titulo }).session(session);
@@ -486,68 +509,24 @@ export class EstructuraBatchService {
           resultado.partidasEliminadas.push(id_partida);
         }
       }
+      const tiempoEliminarTotal = Date.now() - tiempoEliminarInicio;
+      console.log(`[BACKEND] ⏱️ Eliminar ${resultado.titulosEliminados.length} títulos y ${resultado.partidasEliminadas.length} partidas: ${tiempoEliminarTotal}ms`);
 
       // Si todo fue exitoso, la transacción se confirma automáticamente
       resultado.success = true;
       resultado.message = 'Cambios guardados exitosamente';
       });
       
-      // Recalcular totales de todos los títulos afectados después de la transacción
-      // Recopilar títulos únicos afectados
-      const titulosAfectados = new Set<string>();
-      const presupuestosAfectados = new Set<string>();
+      const tiempoTransaccionTotal = Date.now() - tiempoTransaccionInicio;
+      console.log(`[BACKEND] ⏱️ Transacción completada: ${tiempoTransaccionTotal}ms`);
       
-      // Títulos creados/actualizados
-      for (const titulo of [...resultado.titulosCreados, ...resultado.titulosActualizados]) {
-        if (titulo.id_titulo && titulo.id_presupuesto) {
-          titulosAfectados.add(titulo.id_titulo);
-          presupuestosAfectados.add(titulo.id_presupuesto);
-          // Si tiene padre, también recalcular el padre
-          if (titulo.id_titulo_padre) {
-            titulosAfectados.add(titulo.id_titulo_padre);
-          }
-        }
-      }
+      // ⚠️ RECÁLCULO ELIMINADO: Los totales ahora se calculan en el frontend
+      // El frontend recalcula total_parcial, parcial_partida y parcial_presupuesto instantáneamente
+      // después de guardar usando el hook useEstructuraPresupuesto
+      console.log('[BACKEND] ℹ️ Recálculo de totales deshabilitado - se calcula en frontend');
       
-      // Partidas creadas/actualizadas
-      for (const partida of [...resultado.partidasCreadas, ...resultado.partidasActualizadas]) {
-        if (partida.id_titulo && partida.id_presupuesto) {
-          titulosAfectados.add(partida.id_titulo);
-          presupuestosAfectados.add(partida.id_presupuesto);
-        }
-      }
-      
-      // Para títulos eliminados, agregar el padre a la lista de afectados
-      for (const info of titulosAEliminarInfo) {
-        if (info.id_titulo_padre) {
-          titulosAfectados.add(info.id_titulo_padre);
-        }
-        presupuestosAfectados.add(info.id_presupuesto);
-      }
-      
-      // Para partidas eliminadas, agregar el título a la lista de afectados
-      for (const info of partidasAEliminarInfo) {
-        titulosAfectados.add(info.id_titulo);
-        presupuestosAfectados.add(info.id_presupuesto);
-      }
-      
-      // Recalcular totales de títulos únicos afectados
-      if (this.recalculoTotalesService && titulosAfectados.size > 0) {
-        for (const id_titulo of titulosAfectados) {
-          try {
-            const titulo = await this.tituloService.obtenerPorId(id_titulo);
-            if (titulo && titulo.id_presupuesto) {
-              await this.recalculoTotalesService.recalcularTotalesAscendentes(
-                id_titulo,
-                titulo.id_presupuesto
-              );
-            }
-          } catch (error) {
-            console.error('[EstructuraBatchService] Error al recalcular totales:', error);
-            // Continuar con otros títulos
-          }
-        }
-      }
+      const tiempoTotal = Date.now() - tiempoInicio;
+      console.log(`[BACKEND] ✅ Batch completado: ${tiempoTotal}ms`);
       
       return resultado;
     } catch (error: any) {
@@ -737,7 +716,7 @@ export class EstructuraBatchService {
         }
         if (tituloInput.orden !== undefined) cambios.orden = tituloInput.orden;
         if (tituloInput.nivel !== undefined) cambios.nivel = tituloInput.nivel;
-        if (tituloInput.numero_item !== undefined) cambios.numero_item = tituloInput.numero_item;
+        // numero_item NO se actualiza - se calcula dinámicamente en frontend
         if (tituloInput.tipo !== undefined) cambios.tipo = tituloInput.tipo;
         if (tituloInput.total_parcial !== undefined) cambios.total_parcial = tituloInput.total_parcial;
         if (tituloInput.id_especialidad !== undefined) {
@@ -794,7 +773,7 @@ export class EstructuraBatchService {
         if (partidaInput.precio_unitario !== undefined) cambios.precio_unitario = partidaInput.precio_unitario;
         if (partidaInput.unidad_medida !== undefined) cambios.unidad_medida = partidaInput.unidad_medida;
         if (partidaInput.nivel_partida !== undefined) cambios.nivel_partida = partidaInput.nivel_partida;
-        if (partidaInput.numero_item !== undefined) cambios.numero_item = partidaInput.numero_item;
+        // numero_item NO se actualiza - se calcula dinámicamente en frontend
         if (partidaInput.estado !== undefined) cambios.estado = partidaInput.estado;
         if (partidaInput.parcial_partida !== undefined) cambios.parcial_partida = partidaInput.parcial_partida;
 

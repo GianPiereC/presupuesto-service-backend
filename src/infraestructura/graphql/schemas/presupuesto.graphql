@@ -137,6 +137,7 @@ extend type Mutation {
     plazo: Int
     ppto_base: Float
     ppto_oferta: Float
+    parcial_presupuesto: Float
     total_presupuesto: Float
   ): Presupuesto
 

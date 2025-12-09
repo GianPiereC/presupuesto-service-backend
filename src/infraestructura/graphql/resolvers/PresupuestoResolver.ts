@@ -2,19 +2,23 @@ import { IResolvers } from '@graphql-tools/utils';
 import { PresupuestoService } from '../../../aplicacion/servicios/PresupuestoService';
 import { VersionadoPresupuestoService } from '../../../aplicacion/servicios/VersionadoPresupuestoService';
 import { EstructuraPresupuestoService } from '../../../aplicacion/servicios/EstructuraPresupuestoService';
+import { PrecioRecursoPresupuestoService } from '../../../aplicacion/servicios/PrecioRecursoPresupuestoService';
 import { Presupuesto } from '../../../dominio/entidades/Presupuesto';
 import { Titulo } from '../../../dominio/entidades/Titulo';
 import { Partida } from '../../../dominio/entidades/Partida';
+import { Apu } from '../../../dominio/entidades/Apu';
 import { ErrorHandler } from './ErrorHandler';
 import { PresupuestoModel } from '../../persistencia/mongo/schemas/PresupuestoSchema';
 import { TituloModel } from '../../persistencia/mongo/schemas/TituloSchema';
 import { PartidaModel } from '../../persistencia/mongo/schemas/PartidaSchema';
+import { ApuModel } from '../../persistencia/mongo/schemas/ApuSchema';
 
 export class PresupuestoResolver {
   constructor(
     private readonly presupuestoService: PresupuestoService,
     private readonly versionadoPresupuestoService: VersionadoPresupuestoService,
-    private readonly estructuraPresupuestoService: EstructuraPresupuestoService
+    private readonly estructuraPresupuestoService: EstructuraPresupuestoService,
+    private readonly precioRecursoPresupuestoService?: PrecioRecursoPresupuestoService
   ) {}
 
   getResolvers(): IResolvers {
@@ -250,10 +254,56 @@ export class PresupuestoResolver {
                 };
               });
 
+              // Normalizar APUs (si existen)
+              let apusNormalizados: any[] = [];
+              let preciosCompartidos: any[] = [];
+              
+              if (estructura.apus && estructura.apus.length > 0) {
+                const apuIdsMap = await this.getMongoIdsBatchApus(estructura.apus.map(a => a.id_apu));
+                
+                // Obtener precios compartidos del presupuesto (una sola vez para todos los APUs)
+                const preciosMap = new Map<string, number>();
+                if (this.precioRecursoPresupuestoService && id_presupuesto) {
+                  try {
+                    const precios = await this.precioRecursoPresupuestoService.obtenerPorPresupuesto(id_presupuesto);
+                    precios.forEach(p => {
+                      preciosMap.set(p.id_precio_recurso, p.precio);
+                      // Agregar a precios_compartidos para el frontend
+                      preciosCompartidos.push({
+                        id_precio_recurso: p.id_precio_recurso,
+                        recurso_id: p.recurso_id,
+                        precio: p.precio
+                      });
+                    });
+                  } catch (error) {
+                    console.error('Error cargando precios compartidos:', error);
+                  }
+                }
+                
+                apusNormalizados = await Promise.all(estructura.apus.map(async (apu) => {
+                  const apuObj = apu instanceof Apu
+                    ? Object.assign({}, apu)
+                    : apu;
+                  
+                  // Normalizar recursos con precio calculado
+                  const recursosNormalizados = (apu.recursos || []).map((r: any) => {
+                    return this.normalizarRecursoApu(r, apu, preciosMap);
+                  });
+                  
+                  return {
+                    ...apuObj,
+                    _id: apuIdsMap.get(apu.id_apu) || null,
+                    recursos: recursosNormalizados
+                  };
+                }));
+              }
+
               return {
                 presupuesto: presupuestoNormalizado,
                 titulos: titulosNormalizados,
-                partidas: partidasNormalizadas
+                partidas: partidasNormalizadas,
+                apus: apusNormalizados,
+                precios_compartidos: preciosCompartidos
               };
             },
             'getEstructuraPresupuesto',
@@ -806,6 +856,139 @@ export class PresupuestoResolver {
       console.error('Error obteniendo _ids de partidas de MongoDB en batch:', error);
       return new Map();
     }
+  }
+
+  private async getMongoIdsBatchApus(id_apus: string[]): Promise<Map<string, string>> {
+    try {
+      if (id_apus.length === 0) {
+        return new Map();
+      }
+      const docs = await ApuModel.find({ id_apu: { $in: id_apus } }).lean();
+      const idsMap = new Map<string, string>();
+      docs.forEach((doc: any) => {
+        if (doc.id_apu && doc._id) {
+          idsMap.set(doc.id_apu, doc._id.toString());
+        }
+      });
+      return idsMap;
+    } catch (error) {
+      console.error('Error obteniendo _ids de APUs de MongoDB en batch:', error);
+      return new Map();
+    }
+  }
+
+  /**
+   * Normaliza un recurso APU calculando el precio correctamente
+   * Misma lógica que ApuResolver.toObject()
+   */
+  private normalizarRecursoApu(r: any, apu: Apu, preciosMap: Map<string, number>): any {
+    const cantidad = typeof r.cantidad === 'number' ? r.cantidad : 0;
+    const desperdicio = typeof r.desperdicio_porcentaje === 'number' ? r.desperdicio_porcentaje : 0;
+    const cantidadConDesperdicio = typeof r.cantidad_con_desperdicio === 'number' 
+      ? r.cantidad_con_desperdicio 
+      : cantidad * (1 + desperdicio / 100);
+    
+    let precio = 0;
+    
+    // PRIORIDAD 1: Si tiene precio override, usarlo directamente
+    if (r.tiene_precio_override && r.precio_override !== undefined && r.precio_override !== null) {
+      precio = r.precio_override;
+    } else if (r.id_precio_recurso && preciosMap.has(r.id_precio_recurso)) {
+      // PRIORIDAD 2: Si no tiene override, usar precio compartido
+      precio = preciosMap.get(r.id_precio_recurso)!;
+    } else {
+      // PRIORIDAD 3: Si no hay precio compartido, intentar calcular desde parcial guardado
+      const tipoRecurso = r.tipo_recurso || 'MATERIAL';
+      if (tipoRecurso === 'MANO_OBRA' && apu.rendimiento > 0 && apu.jornada > 0 && r.parcial) {
+        // Despejar precio desde parcial: Precio = Parcial / ((1 / Rendimiento) × Jornada × Cuadrilla)
+        const cuadrillaValue = r.cuadrilla || 1;
+        const divisor = (1 / apu.rendimiento) * apu.jornada * cuadrillaValue;
+        precio = divisor > 0 ? r.parcial / divisor : 0;
+      } else if (cantidadConDesperdicio > 0) {
+        precio = (r.parcial || 0) / cantidadConDesperdicio;
+      }
+    }
+    
+    // Función helper para truncar a 4 decimales
+    const truncateToFour = (num: number): number => {
+      return Math.round(num * 10000) / 10000;
+    };
+
+    // Para subpartidas, el precio puede venir del precio_unitario_subpartida
+    let precioFinal = precio;
+    if (r.id_partida_subpartida && r.precio_unitario_subpartida !== undefined) {
+      precioFinal = r.precio_unitario_subpartida;
+    }
+    
+    // Usar el parcial guardado si existe, sino recalcular
+    let parcial = typeof r.parcial === 'number' ? r.parcial : 0;
+    const tipoRecurso = r.tipo_recurso || 'MATERIAL';
+    
+    // Si es subpartida, recalcular parcial como cantidad × precio_unitario_subpartida
+    if (r.id_partida_subpartida && r.precio_unitario_subpartida !== undefined) {
+      if (!parcial || parcial === 0) {
+        parcial = Math.round(cantidad * precioFinal * 100) / 100;
+      }
+    } else {
+      // Solo recalcular si el parcial no está guardado o es 0
+      if (!parcial || parcial === 0) {
+        switch (tipoRecurso) {
+          case 'MATERIAL':
+            parcial = truncateToFour(cantidadConDesperdicio * precioFinal);
+            break;
+          
+          case 'MANO_OBRA': {
+            if (apu.rendimiento > 0 && apu.jornada > 0) {
+              const cuadrillaValue = r.cuadrilla || 1;
+              parcial = truncateToFour((1 / apu.rendimiento) * apu.jornada * cuadrillaValue * precioFinal);
+            } else {
+              parcial = 0;
+            }
+            break;
+          }
+          
+          case 'EQUIPO':
+            if (apu.rendimiento > 0 && apu.jornada > 0) {
+              const horasMaquina = (cantidad / apu.rendimiento) * apu.jornada;
+              parcial = truncateToFour(horasMaquina * precioFinal);
+            } else {
+              parcial = 0;
+            }
+            break;
+          
+          case 'SUBCONTRATO':
+            parcial = truncateToFour(cantidad * precioFinal);
+            break;
+          
+          default:
+            parcial = truncateToFour(cantidadConDesperdicio * precioFinal);
+        }
+      } else {
+        // Asegurar que el parcial guardado esté truncado a 4 decimales
+        parcial = truncateToFour(parcial);
+      }
+    }
+    
+    return {
+      id_recurso_apu: r.id_recurso_apu || '',
+      recurso_id: r.recurso_id || undefined,
+      id_partida_subpartida: r.id_partida_subpartida || undefined,
+      codigo_recurso: r.codigo_recurso || null,
+      descripcion: r.descripcion || '',
+      unidad_medida: r.unidad_medida || '',
+      tipo_recurso: r.tipo_recurso || 'MATERIAL',
+      id_precio_recurso: r.id_precio_recurso ?? null,
+      precio: precioFinal, // NUNCA null, siempre un número
+      cuadrilla: r.cuadrilla ?? null,
+      cantidad: cantidad,
+      desperdicio_porcentaje: desperdicio,
+      cantidad_con_desperdicio: cantidadConDesperdicio,
+      parcial: parcial,
+      precio_unitario_subpartida: r.precio_unitario_subpartida || undefined,
+      tiene_precio_override: r.tiene_precio_override || false,
+      precio_override: r.precio_override || undefined,
+      orden: typeof r.orden === 'number' ? r.orden : 0
+    };
   }
 }
 

@@ -21,7 +21,6 @@ const EspecialidadSchema = new Schema<EspecialidadDocument>({
 
 // Índices
 EspecialidadSchema.index({ nombre: 1 });
-EspecialidadSchema.index({ id_especialidad: 1 });
 
 EspecialidadSchema.statics['generateNextId'] = async function(): Promise<string> {
   try {

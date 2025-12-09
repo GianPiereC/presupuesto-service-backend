@@ -5,7 +5,6 @@ import { BaseService } from './BaseService';
 import { ApuModel } from '../../infraestructura/persistencia/mongo/schemas/ApuSchema';
 import { PrecioRecursoPresupuestoService } from './PrecioRecursoPresupuestoService';
 import { PartidaService } from './PartidaService';
-import { RecalculoTotalesService } from './RecalculoTotalesService';
 import { PartidaModel } from '../../infraestructura/persistencia/mongo/schemas/PartidaSchema';
 import mongoose from 'mongoose';
 
@@ -18,19 +17,16 @@ export class ApuService extends BaseService<Apu> {
   private readonly apuRepository: IApuRepository;
   private readonly precioRecursoPresupuestoService: PrecioRecursoPresupuestoService | undefined;
   private readonly partidaService: PartidaService | undefined;
-  private readonly recalculoTotalesService: RecalculoTotalesService | undefined;
 
   constructor(
     apuRepository: IApuRepository,
     precioRecursoPresupuestoService?: PrecioRecursoPresupuestoService,
-    partidaService?: PartidaService,
-    recalculoTotalesService?: RecalculoTotalesService
+    partidaService?: PartidaService
   ) {
     super(apuRepository);
     this.apuRepository = apuRepository;
     this.precioRecursoPresupuestoService = precioRecursoPresupuestoService;
     this.partidaService = partidaService;
-    this.recalculoTotalesService = recalculoTotalesService;
   }
 
   async obtenerTodos(): Promise<Apu[]> {
@@ -106,13 +102,8 @@ export class ApuService extends BaseService<Apu> {
     
     const apu = await this.apuRepository.create(dataConId);
     
-    if (apu.recursos.length > 0) {
-      apu.calcularCostoDirecto();
-      await this.apuRepository.update(apu.id_apu, apu);
-      
-      // Actualizar precio_unitario de la partida
-      await this.actualizarPrecioPartida(apu.id_partida, apu.costo_directo);
-    }
+    // El frontend calcula precio_unitario y parcial_partida desde los APUs
+    // No es necesario calcular costo_directo ni actualizar partidas aquí
     
     return apu;
   }
@@ -156,13 +147,8 @@ export class ApuService extends BaseService<Apu> {
       }
     }
     
-    if (apu.recursos.length > 0) {
-      apu.calcularCostoDirecto();
-      await this.apuRepository.update(id_apu, apu);
-      
-      // Actualizar precio_unitario de la partida
-      await this.actualizarPrecioPartida(apu.id_partida, apu.costo_directo);
-    }
+    // El frontend calcula precio_unitario y parcial_partida desde los APUs
+    // No es necesario calcular costo_directo ni actualizar partidas aquí
     
     return apu;
   }
@@ -208,10 +194,8 @@ export class ApuService extends BaseService<Apu> {
     
     const apuActualizado = await this.apuRepository.agregarRecurso(id_apu, recurso);
     
-    if (apuActualizado) {
-      // Actualizar precio_unitario de la partida
-      await this.actualizarPrecioPartida(apuActualizado.id_partida, apuActualizado.costo_directo);
-    }
+    // El frontend calcula precio_unitario y parcial_partida desde los APUs
+    // No es necesario actualizar partidas aquí
     
     return apuActualizado;
   }
@@ -286,9 +270,8 @@ export class ApuService extends BaseService<Apu> {
         // NO actualizar PrecioRecursoPresupuesto
         const apuActualizado = await this.apuRepository.actualizarRecurso(id_apu, id_recurso_apu, recurso);
         
-        if (apuActualizado) {
-          await this.actualizarPrecioPartida(apuActualizado.id_partida, apuActualizado.costo_directo);
-        }
+        // El frontend calcula precio_unitario y parcial_partida desde los APUs
+        // No es necesario actualizar partidas aquí
         
         return apuActualizado;
       }
@@ -389,10 +372,8 @@ export class ApuService extends BaseService<Apu> {
 
       const apuActualizado = await this.apuRepository.actualizarRecurso(id_apu, id_recurso_apu, recurso);
       
-      if (apuActualizado) {
-        // Actualizar precio_unitario de la partida
-        await this.actualizarPrecioPartida(apuActualizado.id_partida, apuActualizado.costo_directo);
-      }
+      // El frontend calcula precio_unitario y parcial_partida desde los APUs
+      // No es necesario actualizar partidas aquí
       
       return apuActualizado;
     }
@@ -412,19 +393,58 @@ export class ApuService extends BaseService<Apu> {
     if (!recurso.recurso_id || !recurso.codigo_recurso) return;
 
     try {
-      const nuevoPrecio = await this.precioRecursoPresupuestoService.crear({
-        id_presupuesto,
-        recurso_id: recurso.recurso_id,
-        codigo_recurso: recurso.codigo_recurso,
-        descripcion: recurso.descripcion,
-        unidad: recurso.unidad_medida,
-        tipo_recurso: recurso.tipo_recurso,
-        precio,
-        usuario_actualizo: usuarioId
-      });
+      // Verificar si ya existe un precio compartido para este presupuesto y recurso
+      const precioExistente = await this.precioRecursoPresupuestoService
+        .obtenerPorPresupuestoYRecurso(id_presupuesto, recurso.recurso_id);
 
-      recurso.id_precio_recurso = nuevoPrecio.id_precio_recurso;
-    } catch (error) {
+      if (precioExistente) {
+        // Si ya existe, actualizar el precio si es diferente
+        if (Math.abs(precio - precioExistente.precio) > 0.01) {
+          await this.precioRecursoPresupuestoService.actualizarPrecio(
+            precioExistente.id_precio_recurso,
+            precio,
+            usuarioId
+          );
+        }
+        recurso.id_precio_recurso = precioExistente.id_precio_recurso;
+      } else {
+        // Si no existe, crear uno nuevo
+        const nuevoPrecio = await this.precioRecursoPresupuestoService.crear({
+          id_presupuesto,
+          recurso_id: recurso.recurso_id,
+          codigo_recurso: recurso.codigo_recurso,
+          descripcion: recurso.descripcion,
+          unidad: recurso.unidad_medida,
+          tipo_recurso: recurso.tipo_recurso,
+          precio,
+          usuario_actualizo: usuarioId
+        });
+
+        recurso.id_precio_recurso = nuevoPrecio.id_precio_recurso;
+      }
+    } catch (error: any) {
+      // Si el error es de clave duplicada, intentar obtener el precio existente
+      if (error?.code === 11000 || error?.errorResponse?.code === 11000) {
+        console.warn(`[ApuService] Precio compartido ya existe (duplicate key), obteniendo existente...`);
+        try {
+          const precioExistente = await this.precioRecursoPresupuestoService
+            .obtenerPorPresupuestoYRecurso(id_presupuesto, recurso.recurso_id);
+          if (precioExistente) {
+            recurso.id_precio_recurso = precioExistente.id_precio_recurso;
+            // Actualizar precio si es diferente
+            if (Math.abs(precio - precioExistente.precio) > 0.01) {
+              await this.precioRecursoPresupuestoService.actualizarPrecio(
+                precioExistente.id_precio_recurso,
+                precio,
+                usuarioId
+              );
+            }
+            return;
+          }
+        } catch (fallbackError) {
+          console.error('[ApuService] Error al obtener precio existente después de duplicate key:', fallbackError);
+        }
+      }
       console.error('[ApuService] Error al crear precio compartido:', error);
     }
   }
@@ -432,10 +452,8 @@ export class ApuService extends BaseService<Apu> {
   async eliminarRecurso(id_apu: string, id_recurso_apu: string): Promise<Apu | null> {
     const apuActualizado = await this.apuRepository.eliminarRecurso(id_apu, id_recurso_apu);
     
-    if (apuActualizado) {
-      // Actualizar precio_unitario de la partida
-      await this.actualizarPrecioPartida(apuActualizado.id_partida, apuActualizado.costo_directo);
-    }
+    // El frontend calcula precio_unitario y parcial_partida desde los APUs
+    // No es necesario actualizar partidas aquí
     
     return apuActualizado;
   }
@@ -444,11 +462,9 @@ export class ApuService extends BaseService<Apu> {
     const apu = await this.obtenerPorId(id_apu);
     if (!apu) return null;
     
-    apu.calcularCostoDirecto();
-    await this.apuRepository.update(id_apu, apu);
-    
-    // Actualizar precio_unitario de la partida
-    await this.actualizarPrecioPartida(apu.id_partida, apu.costo_directo);
+    // El frontend calcula precio_unitario y parcial_partida desde los APUs
+    // Este método puede ser útil para recalcular parciales de recursos si cambió rendimiento/jornada
+    // pero no es necesario actualizar partidas aquí
     
     return apu;
   }
@@ -480,37 +496,9 @@ export class ApuService extends BaseService<Apu> {
     return recurso.calcularParcial(precio, apu.rendimiento, apu.jornada);
   }
 
-  /**
-   * Actualiza el precio_unitario de la partida basado en el costo_directo del APU
-   * Redondea a 2 decimales para mantener consistencia
-   * Recalcula totales ascendentes de títulos y presupuesto
-   */
-  private async actualizarPrecioPartida(id_partida: string, costo_directo: number): Promise<void> {
-    if (!this.partidaService) return;
-    
-    try {
-      const partida = await this.partidaService.obtenerPorId(id_partida);
-      if (!partida) return;
-      
-      // Actualizar precio_unitario = costo_directo (redondeado a 2 decimales)
-      // Recalcular parcial_partida = metrado * precio_unitario (redondeado a 2 decimales)
-      const nuevoPrecioUnitario = Math.round(costo_directo * 100) / 100;
-      const nuevoParcialPartida = Math.round(partida.metrado * nuevoPrecioUnitario * 100) / 100;
-      
-      await this.partidaService.actualizar(id_partida, {
-        precio_unitario: nuevoPrecioUnitario,
-        parcial_partida: nuevoParcialPartida
-      });
-      
-      // Recalcular totales ascendentes del título (y propagar hacia arriba)
-      if (this.recalculoTotalesService) {
-        await this.recalculoTotalesService.recalcularTotalesAscendentes(partida.id_titulo, partida.id_presupuesto);
-      }
-    } catch (error) {
-      console.error('[ApuService] Error al actualizar precio de partida:', error);
-      // No lanzar error para no interrumpir el flujo principal
-    }
-  }
+  // Método actualizarPrecioPartida() eliminado
+  // El frontend calcula precio_unitario y parcial_partida desde los APUs
+  // No es necesario actualizar partidas ni recalcular totales en el backend
 
   /**
    * Recalcula todos los APUs que usan un recurso específico (para bulk update cuando cambia precio)
@@ -566,8 +554,8 @@ export class ApuService extends BaseService<Apu> {
       const precios = await this.precioRecursoPresupuestoService.obtenerPorPresupuesto(id_presupuesto);
       const preciosMap = new Map(precios.map(p => [p.id_precio_recurso, p.precio]));
         
-        // Set para recopilar títulos únicos afectados (evitar recalcular duplicados)
-        const titulosAfectados = new Set<string>();
+        // El frontend calcula totales desde los APUs
+        // No es necesario recopilar títulos afectados
       
       // Recalcular cada APU afectado
       for (const apu of apusAfectados) {
@@ -613,30 +601,9 @@ export class ApuService extends BaseService<Apu> {
         // Guardar APU actualizado
         await this.apuRepository.update(apu.id_apu, apu);
         
-          // Actualizar precio_unitario y parcial_partida de la partida
-          const partida = await this.partidaService.obtenerPorId(apu.id_partida);
-          if (partida) {
-            const nuevoPrecioUnitario = Math.round(apu.costo_directo * 100) / 100;
-            const nuevoParcialPartida = Math.round(partida.metrado * nuevoPrecioUnitario * 100) / 100;
-            
-            await this.partidaService.actualizar(apu.id_partida, {
-              precio_unitario: nuevoPrecioUnitario,
-              parcial_partida: nuevoParcialPartida
-            });
-            
-            // Agregar título a la lista de afectados (evita duplicados)
-            titulosAfectados.add(partida.id_titulo);
-          }
+          // El frontend calcula precio_unitario y parcial_partida desde los APUs
+          // No es necesario actualizar partidas ni recalcular totales aquí
         }
-        
-      // Recalcular totales de títulos únicos afectados (batch - evita recálculos duplicados)
-      if (this.recalculoTotalesService && titulosAfectados.size > 0) {
-        // Recalcular cada título único y propagar hacia arriba
-        // Nota: RecalculoTotalesService maneja sus propias transacciones
-        for (const id_titulo of titulosAfectados) {
-          await this.recalculoTotalesService.recalcularTotalesAscendentes(id_titulo, id_presupuesto);
-        }
-      }
       });
     } finally {
       await session.endSession();
@@ -652,9 +619,8 @@ export class ApuService extends BaseService<Apu> {
   ): Promise<void> {
     if (!this.precioRecursoPresupuestoService || !this.partidaService) return;
     
-    // Almacenar estados originales para rollback manual
+    // Almacenar estados originales para rollback manual (solo APUs, no partidas)
     const estadosAPUs: Array<{ id_apu: string; costo_directo: number }> = [];
-    const estadosPartidas: Array<{ id_partida: string; precio_unitario: number; parcial_partida: number }> = [];
     
     try {
       // Obtener todos los APUs del presupuesto
@@ -674,8 +640,8 @@ export class ApuService extends BaseService<Apu> {
       const precios = await this.precioRecursoPresupuestoService.obtenerPorPresupuesto(id_presupuesto);
       const preciosMap = new Map(precios.map(p => [p.id_precio_recurso, p.precio]));
       
-      // Set para recopilar títulos únicos afectados
-      const titulosAfectados = new Set<string>();
+      // El frontend calcula totales desde los APUs
+      // No es necesario recopilar títulos afectados
       
       // Recalcular cada APU afectado
       for (const apu of apusAfectados) {
@@ -721,49 +687,15 @@ export class ApuService extends BaseService<Apu> {
         // Guardar APU actualizado
         await this.apuRepository.update(apu.id_apu, apu);
         
-        // Actualizar precio_unitario y parcial_partida de la partida
-        const partida = await this.partidaService.obtenerPorId(apu.id_partida);
-        if (partida) {
-          // Guardar estado original de partida
-          estadosPartidas.push({
-            id_partida: partida.id_partida,
-            precio_unitario: partida.precio_unitario,
-            parcial_partida: partida.parcial_partida
-          });
-          
-          const nuevoPrecioUnitario = Math.round(apu.costo_directo * 100) / 100;
-          const nuevoParcialPartida = Math.round(partida.metrado * nuevoPrecioUnitario * 100) / 100;
-          
-          await this.partidaService.actualizar(apu.id_partida, {
-            precio_unitario: nuevoPrecioUnitario,
-            parcial_partida: nuevoParcialPartida
-          });
-          
-          titulosAfectados.add(partida.id_titulo);
-        }
-      }
-      
-      // Recalcular totales de títulos únicos afectados
-      if (this.recalculoTotalesService && titulosAfectados.size > 0) {
-        // Recalcular cada título único y propagar hacia arriba
-        for (const id_titulo of titulosAfectados) {
-          await this.recalculoTotalesService.recalcularTotalesAscendentes(id_titulo, id_presupuesto);
-        }
+        // El frontend calcula precio_unitario y parcial_partida desde los APUs
+        // No es necesario actualizar partidas ni recalcular totales aquí
       }
     } catch (error) {
       // Rollback manual: revertir todos los cambios
       console.error('[ApuService] Error al recalcular APUs, ejecutando rollback manual...', error);
       
-      // Rollback de partidas
-      for (let i = estadosPartidas.length - 1; i >= 0; i--) {
-        const estado = estadosPartidas[i];
-        if (estado) {
-          await this.partidaService.actualizar(estado.id_partida, {
-            precio_unitario: estado.precio_unitario,
-            parcial_partida: estado.parcial_partida
-          });
-        }
-      }
+      // El frontend calcula precio_unitario y parcial_partida desde los APUs
+      // No es necesario rollback de partidas aquí
       
       // Rollback de APUs (restaurar costo_directo)
       for (let i = estadosAPUs.length - 1; i >= 0; i--) {
@@ -777,8 +709,8 @@ export class ApuService extends BaseService<Apu> {
         }
       }
       
-      // Rollback de títulos y presupuesto se maneja automáticamente por RecalculoTotalesService
-      // No necesitamos rollback manual aquí porque RecalculoTotalesService ya lo maneja
+      // El frontend calcula totales desde los APUs
+      // No es necesario rollback de títulos y presupuesto aquí
       
       throw error;
     }
