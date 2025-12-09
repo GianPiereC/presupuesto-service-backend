@@ -424,12 +424,42 @@ export class AprobacionPresupuestoService extends BaseService<AprobacionPresupue
           }
         }
         // NO actualizar el presupuesto padre para CONTRACTUAL_A_META si hay version_presupuesto
-      } else {
-        // Para otros tipos (LICITACION_A_CONTRACTUAL), actualizar el padre
-        await this.presupuestoRepository.update(aprobacion.id_presupuesto, {
-          estado_aprobacion: undefined,
-          estado: 'rechazado'
-        });
+      } else if (aprobacion.tipo_aprobacion === 'LICITACION_A_CONTRACTUAL') {
+        // Para LICITACION_A_CONTRACTUAL:
+        // 1. Rechazar la versión específica de licitación
+        if (aprobacion.version_presupuesto) {
+          const versionLicitacion = await PresupuestoModel.findOne({
+            id_grupo_version: aprobacion.id_grupo_version,
+            fase: 'LICITACION',
+            version: aprobacion.version_presupuesto
+          }).lean();
+
+          if (versionLicitacion && versionLicitacion.id_presupuesto) {
+            // Actualizar solo la versión específica rechazada
+            await this.presupuestoRepository.update(versionLicitacion.id_presupuesto, {
+              estado: 'rechazado',
+              estado_aprobacion: undefined
+            });
+            console.log(`[AprobacionPresupuestoService] Versión LICITACION rechazada: ${versionLicitacion.id_presupuesto} (V${aprobacion.version_presupuesto})`);
+          }
+        }
+
+        // 2. El presupuesto padre vuelve a su estado anterior
+        // Si el estado actual es "en_revision", significa que fue cambiado al crear la aprobación
+        // Por lo tanto, volvemos a "aprobado" que es el estado típico en fase LICITACION
+        const estadoAnteriorPadre = presupuesto.estado === 'en_revision' 
+          ? 'aprobado' // Si está en_revision, volver a aprobado (estado típico en LICITACION)
+          : presupuesto.estado; // Si tiene otro estado, mantenerlo
+        
+        // Usar $unset para eliminar estado_aprobacion y $set para actualizar el estado
+        await PresupuestoModel.findOneAndUpdate(
+          { id_presupuesto: aprobacion.id_presupuesto },
+          {
+            $unset: { estado_aprobacion: '' },
+            $set: { estado: estadoAnteriorPadre }
+          },
+          { new: true }
+        );
       }
     }
 
