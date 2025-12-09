@@ -150,7 +150,9 @@ export class ApuService extends BaseService<Apu> {
     // El frontend calcula precio_unitario y parcial_partida desde los APUs
     // No es necesario calcular costo_directo ni actualizar partidas aquí
     
-    return apu;
+    // IMPORTANTE: Guardar los cambios en la base de datos
+    const apuActualizado = await this.apuRepository.update(apu.id_apu, apu);
+    return apuActualizado;
   }
 
   async agregarRecurso(
